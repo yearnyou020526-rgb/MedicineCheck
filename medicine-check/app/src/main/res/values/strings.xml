@@ -54,6 +54,8 @@
     <string name="record_status_none">未记录</string>
     <string name="confirm_change_title">确认修改记录？</string>
     <string name="confirm_change_message">当前记录为漏吃，确认要改为已吃或清除吗？</string>
+    <string name="confirm_clear_expired_title">清除过期记录？</string>
+    <string name="confirm_clear_expired_message">该剂次已过服药时间，清除后系统可能会重新标记为漏吃。</string>
     <string name="permission_card_title">权限与提醒稳定性</string>
     <string name="permission_notification">通知权限：%1$s</string>
     <string name="permission_reminder_switch">消息提醒开关：%1$s</string>

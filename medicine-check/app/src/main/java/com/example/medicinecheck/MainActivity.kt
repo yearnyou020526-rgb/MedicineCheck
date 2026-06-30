@@ -94,6 +94,7 @@ class MainActivity : Activity() {
         configureReminderSwitch()
         configureMissedReminderSpinner()
         configurePermissionButtons()
+        MedicineRepository.autoMarkMissedDoses(this)
 
         findViewById<Button>(R.id.save_name_button).setOnClickListener {
             MedicineRepository.setMedicineInfo(
@@ -151,6 +152,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        MedicineRepository.autoMarkMissedDoses(this)
         WidgetUpdateHelper.updateAllWidgets(this)
         refreshReminderSchedule()
         refreshUi()
@@ -752,6 +754,17 @@ class MainActivity : Activity() {
                 }
                 if (status == RecordStatus.MISSED && which != 1) {
                     confirmChangeFromMissed(applyChange)
+                } else if (
+                    which == 2 &&
+                    status != RecordStatus.NONE &&
+                    MedicineRepository.isDoseExpired(this, dateKey, doseIndex)
+                ) {
+                    AlertDialog.Builder(this)
+                        .setTitle(R.string.confirm_clear_expired_title)
+                        .setMessage(R.string.confirm_clear_expired_message)
+                        .setPositiveButton(android.R.string.ok) { _, _ -> applyChange() }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
                 } else {
                     applyChange()
                 }

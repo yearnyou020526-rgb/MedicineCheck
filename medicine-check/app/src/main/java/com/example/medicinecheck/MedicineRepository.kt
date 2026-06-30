@@ -25,6 +25,7 @@ object MedicineRepository {
     private const val KEY_LEGACY_MIGRATED = "legacy_dose_history_migrated"
     private const val KEY_REMINDERS_ENABLED = "reminders_enabled"
     private const val KEY_MISSED_REMINDER_DELAY = "missed_reminder_delay"
+    private const val KEY_AUTO_MISS_LAST_CHECK_DATE = "auto_miss_last_check_date"
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val displayDateFormat = SimpleDateFormat("MM-dd", Locale.US)
@@ -125,7 +126,35 @@ object MedicineRepository {
         prefs(context).edit().putString(doseTimeKey(doseIndex), time).apply()
     }
 
+    fun autoMarkMissedDoses(context: Context): Boolean {
+        migrateLegacyHistory(context)
+
+        val now = Calendar.getInstance()
+        val todayKey = dateFormat.format(now.time)
+        val yesterday = (now.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, -1)
+        }
+        val yesterdayKey = dateFormat.format(yesterday.time)
+        val lastCheckedKey = prefs(context).getString(KEY_AUTO_MISS_LAST_CHECK_DATE, null)
+        val startCalendar = parseDateKey(lastCheckedKey)?.takeIf {
+            !dateFormat.format(it.time).let { key -> key > yesterdayKey }
+        } ?: yesterday
+        val earliestCalendar = (now.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, -30)
+        }
+        if (startCalendar.before(earliestCalendar)) {
+            startCalendar.time = earliestCalendar.time
+        }
+
+        val changed = autoMarkPastDays(context, startCalendar, yesterday) or
+            autoMarkTodayExpiredDoses(context, now)
+
+        prefs(context).edit().putString(KEY_AUTO_MISS_LAST_CHECK_DATE, todayKey).apply()
+        return changed
+    }
+
     fun getCurrentTarget(context: Context): DoseTarget {
+        autoMarkMissedDoses(context)
         val now = Calendar.getInstance()
         return getTargetFor(context, now)
     }
@@ -238,6 +267,15 @@ object MedicineRepository {
             getMissedHistory(context).contains(key) -> RecordStatus.MISSED
             else -> RecordStatus.NONE
         }
+    }
+
+    fun isDoseExpired(context: Context, dateKey: String, doseIndex: Int): Boolean {
+        val today = todayKey()
+        if (dateKey > today) return false
+        if (dateKey < today) return true
+
+        val now = Calendar.getInstance()
+        return getExpiredDoseIndexesForToday(context, now).contains(doseIndex)
     }
 
     fun getDoseProgress(context: Context, dateKey: String): DoseProgress {
@@ -394,6 +432,66 @@ object MedicineRepository {
         return sortedTimes.lastOrNull { nowMinutes >= it.minutesOfDay } ?: sortedTimes.first()
     }
 
+    private fun autoMarkPastDays(
+        context: Context,
+        startCalendar: Calendar,
+        endCalendar: Calendar
+    ): Boolean {
+        if (startCalendar.after(endCalendar)) return false
+
+        var changed = false
+        val cursor = (startCalendar.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val end = (endCalendar.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        while (!cursor.after(end)) {
+            val dateKey = dateFormat.format(cursor.time)
+            getDoseTimes(context).forEach { doseTime ->
+                if (getDoseRecordStatus(context, dateKey, doseTime.doseIndex) == RecordStatus.NONE) {
+                    markDoseMissed(context, dateKey, doseTime.doseIndex)
+                    changed = true
+                }
+            }
+            cursor.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        return changed
+    }
+
+    private fun autoMarkTodayExpiredDoses(context: Context, now: Calendar): Boolean {
+        var changed = false
+        val today = dateFormat.format(now.time)
+        getExpiredDoseIndexesForToday(context, now).forEach { doseIndex ->
+            if (getDoseRecordStatus(context, today, doseIndex) == RecordStatus.NONE) {
+                markDoseMissed(context, today, doseIndex)
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    private fun getExpiredDoseIndexesForToday(context: Context, calendar: Calendar): Set<Int> {
+        val sortedTimes = getSortedDoseTimes(context)
+        if (sortedTimes.size <= 1) return emptySet()
+
+        val nowMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        val expired = mutableSetOf<Int>()
+        for (index in 0 until sortedTimes.lastIndex) {
+            val nextDoseTime = sortedTimes[index + 1]
+            if (nowMinutes >= nextDoseTime.minutesOfDay) {
+                expired.add(sortedTimes[index].doseIndex)
+            }
+        }
+        return expired
+    }
+
     private fun migrateLegacyHistory(context: Context) {
         val sharedPreferences = prefs(context)
         if (sharedPreferences.getBoolean(KEY_LEGACY_MIGRATED, false)) return
@@ -460,6 +558,22 @@ object MedicineRepository {
 
     private fun todayKey(): String {
         return dateFormat.format(Date())
+    }
+
+    private fun parseDateKey(dateKey: String?): Calendar? {
+        if (dateKey == null) return null
+        return try {
+            val date = dateFormat.parse(dateKey) ?: return null
+            Calendar.getInstance().apply {
+                time = date
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+        } catch (_: RuntimeException) {
+            null
+        }
     }
 
     private fun prefs(context: Context) =

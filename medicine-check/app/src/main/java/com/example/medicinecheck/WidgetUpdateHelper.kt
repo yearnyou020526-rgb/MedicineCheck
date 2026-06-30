@@ -6,6 +6,7 @@ import android.content.Context
 
 object WidgetUpdateHelper {
     fun updateAllWidgets(context: Context) {
+        MedicineRepository.autoMarkMissedDoses(context)
         MedicineWidgetProvider.updateHomeWidgets(context)
         MedicineCardWidgetProvider.updateCardWidgets(context)
         MidnightUpdateScheduler.scheduleNext(context)

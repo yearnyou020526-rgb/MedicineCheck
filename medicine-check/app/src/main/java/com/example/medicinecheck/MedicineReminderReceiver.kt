@@ -15,6 +15,7 @@ import java.util.Calendar
 
 class MedicineReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        MedicineRepository.autoMarkMissedDoses(context)
         val doseIndex = intent.getIntExtra(EXTRA_DOSE_INDEX, 1).coerceIn(1, 3)
         val status = MedicineRepository.getDoseRecordStatus(
             context,
@@ -38,6 +39,7 @@ class MedicineReminderReceiver : BroadcastReceiver() {
 
 class MedicineMissedReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        MedicineRepository.autoMarkMissedDoses(context)
         val doseIndex = intent.getIntExtra(MedicineReminderReceiver.EXTRA_DOSE_INDEX, 1)
             .coerceIn(1, 3)
         val status = MedicineRepository.getDoseRecordStatus(
@@ -64,6 +66,7 @@ object MedicineReminderScheduler {
     private const val MISSED_REQUEST_CODE_BASE = 60_000
 
     fun scheduleAllIfEnabled(context: Context) {
+        MedicineRepository.autoMarkMissedDoses(context)
         if (!MedicineRepository.isReminderEnabled(context)) {
             cancelAll(context)
             return
