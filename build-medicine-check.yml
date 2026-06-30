@@ -2,6 +2,8 @@ name: Build MedicineCheck APK
 
 on:
   push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -9,35 +11,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+          java-version: '17'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.10.2"
-
-      - name: Install Android platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          gradle-version: '8.7'
 
       - name: Build debug APK
         working-directory: medicine-check
-        run: gradle :app:assembleDebug
+        run: gradle assembleDebug
 
       - name: Rename APK
-        run: cp medicine-check/app/build/outputs/apk/debug/app-debug.apk MedicineCheck.apk
+        run: |
+          mkdir -p output
+          cp medicine-check/app/build/outputs/apk/debug/app-debug.apk output/MedicineCheck.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: MedicineCheck.apk
-          path: MedicineCheck.apk
+          path: output/MedicineCheck.apk
