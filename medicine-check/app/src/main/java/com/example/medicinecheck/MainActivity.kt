@@ -41,6 +41,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        MidnightUpdateScheduler.scheduleNext(this)
         refreshUi()
     }
 

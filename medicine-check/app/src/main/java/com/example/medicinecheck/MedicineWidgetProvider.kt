@@ -27,6 +27,17 @@ class MedicineWidgetProvider : AppWidgetProvider() {
         appWidgetIds.forEach { appWidgetId ->
             updateWidget(context, appWidgetManager, appWidgetId)
         }
+        MidnightUpdateScheduler.scheduleNext(context)
+    }
+
+    override fun onEnabled(context: Context) {
+        super.onEnabled(context)
+        MidnightUpdateScheduler.scheduleNext(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        MidnightUpdateScheduler.cancel(context)
     }
 
     companion object {
@@ -40,6 +51,7 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             widgetIds.forEach { widgetId ->
                 updateWidget(context, manager, widgetId)
             }
+            MidnightUpdateScheduler.scheduleNext(context)
         }
 
         private fun updateWidget(
