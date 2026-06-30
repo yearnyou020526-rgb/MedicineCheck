@@ -80,23 +80,11 @@ object MedicineReminderScheduler {
             val triggerAtMillis = nextTriggerMillis(doseTime)
             val pendingIntent = reminderPendingIntent(context, doseTime.doseIndex)
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAtMillis,
-                        pendingIntent
-                    )
-                } else {
-                    alarmManager.setExact(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAtMillis,
-                        pendingIntent
-                    )
-                }
+                scheduleAlarmClock(alarmManager, triggerAtMillis, pendingIntent, context)
             } catch (_: SecurityException) {
-                scheduleFallback(alarmManager, triggerAtMillis, pendingIntent)
+                scheduleExactFallback(alarmManager, triggerAtMillis, pendingIntent)
             } catch (_: RuntimeException) {
-                scheduleFallback(alarmManager, triggerAtMillis, pendingIntent)
+                scheduleExactFallback(alarmManager, triggerAtMillis, pendingIntent)
             }
         }
         scheduleMissedRemindersForPendingToday(context)
@@ -194,6 +182,44 @@ object MedicineReminderScheduler {
                 triggerAtMillis,
                 missedReminderPendingIntent(context, doseTime.doseIndex)
             )
+        }
+    }
+
+    private fun scheduleAlarmClock(
+        alarmManager: AlarmManager,
+        triggerAtMillis: Long,
+        pendingIntent: PendingIntent,
+        context: Context
+    ) {
+        alarmManager.setAlarmClock(
+            AlarmManager.AlarmClockInfo(triggerAtMillis, openAppIntent(context)),
+            pendingIntent
+        )
+    }
+
+    private fun scheduleExactFallback(
+        alarmManager: AlarmManager,
+        triggerAtMillis: Long,
+        pendingIntent: PendingIntent
+    ) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            }
+        } catch (_: SecurityException) {
+            scheduleInexact(alarmManager, triggerAtMillis, pendingIntent)
+        } catch (_: RuntimeException) {
+            scheduleInexact(alarmManager, triggerAtMillis, pendingIntent)
         }
     }
 

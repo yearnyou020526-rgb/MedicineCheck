@@ -24,7 +24,7 @@
     <string name="dose_times_title">服药时间</string>
     <string name="dose_time_label">第 %1$d 次服药时间</string>
     <string name="reminder_title">消息提醒</string>
-    <string name="reminder_description">开启后，将按照你设置的吃药时间发送通知提醒。</string>
+    <string name="reminder_description">开启后，将按照你设置的吃药时间发送通知提醒。为提高稳定性，系统可能显示闹钟标识。</string>
     <string name="reminder_permission_needed">需要开启通知权限后才能发送吃药提醒。</string>
     <string name="reminder_notification_title">吃药提醒</string>
     <string name="reminder_notification_content">该吃药了：%1$s%2$s</string>
