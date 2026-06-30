@@ -20,6 +20,11 @@
     <string name="dose_count_title">每日服药次数</string>
     <string name="dose_times_title">服药时间</string>
     <string name="dose_time_label">第 %1$d 次服药时间</string>
+    <string name="reminder_title">消息提醒</string>
+    <string name="reminder_description">开启后，将按照你设置的吃药时间发送通知提醒。</string>
+    <string name="reminder_permission_needed">需要开启通知权限后才能发送吃药提醒。</string>
+    <string name="reminder_notification_title">吃药提醒</string>
+    <string name="reminder_notification_content">该吃药了：%1$s%2$s</string>
     <string name="today_progress_format">今日进度：%1$d/%2$d</string>
     <string name="current_target_format">当前：第 %1$d 次，%2$s，%3$s</string>
     <string name="recent_30_days">最近 30 天记录</string>

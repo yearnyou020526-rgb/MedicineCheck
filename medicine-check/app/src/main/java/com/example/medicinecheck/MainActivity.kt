@@ -1,11 +1,14 @@
 package com.example.medicinecheck
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.TimePickerDialog
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.widget.ArrayAdapter
@@ -14,6 +17,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
@@ -33,6 +37,8 @@ class MainActivity : Activity() {
     private lateinit var doseCountPicker: NumberPicker
     private lateinit var doseTimesContainer: LinearLayout
     private lateinit var calendarContainer: LinearLayout
+    private lateinit var reminderSwitch: Switch
+    private var updatingReminderSwitch = false
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
@@ -52,9 +58,11 @@ class MainActivity : Activity() {
         doseCountPicker = findViewById(R.id.dose_count_picker)
         doseTimesContainer = findViewById(R.id.dose_times_container)
         calendarContainer = findViewById(R.id.calendar_container)
+        reminderSwitch = findViewById(R.id.reminder_switch)
 
         configureDoseCountPicker()
         configureMedicineSpinners()
+        configureReminderSwitch()
 
         findViewById<Button>(R.id.save_name_button).setOnClickListener {
             MedicineRepository.setMedicineInfo(
@@ -65,6 +73,7 @@ class MainActivity : Activity() {
                 dosePeriod = dosePeriodSpinner.selectedItem?.toString() ?: "/天"
             )
             syncAndRefresh()
+            refreshReminderSchedule()
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
         }
 
@@ -77,12 +86,34 @@ class MainActivity : Activity() {
                 syncAndRefresh()
             }
         }
+
+        if (MedicineRepository.isReminderEnabled(this)) {
+            requestNotificationPermissionAndSchedule()
+        } else {
+            MedicineReminderScheduler.cancelAll(this)
+        }
     }
 
     override fun onResume() {
         super.onResume()
         WidgetUpdateHelper.updateAllWidgets(this)
+        refreshReminderSchedule()
         refreshUi()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_POST_NOTIFICATIONS) return
+
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            MedicineReminderScheduler.scheduleAllIfEnabled(this)
+        } else if (MedicineRepository.isReminderEnabled(this)) {
+            Toast.makeText(this, R.string.reminder_permission_needed, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun configureDoseCountPicker() {
@@ -94,6 +125,7 @@ class MainActivity : Activity() {
         doseCountPicker.setOnValueChangedListener { _, _, newValue ->
             MedicineRepository.setDoseCount(this, newValue)
             syncAndRefresh()
+            refreshReminderSchedule()
         }
     }
 
@@ -108,6 +140,19 @@ class MainActivity : Activity() {
             android.R.layout.simple_spinner_dropdown_item,
             MedicineRepository.DOSE_PERIODS
         )
+    }
+
+    private fun configureReminderSwitch() {
+        reminderSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (updatingReminderSwitch) return@setOnCheckedChangeListener
+
+            MedicineRepository.setReminderEnabled(this, isChecked)
+            if (isChecked) {
+                requestNotificationPermissionAndSchedule()
+            } else {
+                MedicineReminderScheduler.cancelAll(this)
+            }
+        }
     }
 
     private fun refreshUi() {
@@ -131,6 +176,9 @@ class MainActivity : Activity() {
         if (doseCountPicker.value != doseCount) {
             doseCountPicker.value = doseCount
         }
+        updatingReminderSwitch = true
+        reminderSwitch.isChecked = MedicineRepository.isReminderEnabled(this)
+        updatingReminderSwitch = false
 
         val target = MedicineRepository.getCurrentTarget(this)
         val progress = MedicineRepository.getTodayProgress(this)
@@ -210,6 +258,7 @@ class MainActivity : Activity() {
                 val time = String.format(Locale.US, "%02d:%02d", hourOfDay, minute)
                 MedicineRepository.setDoseTime(this, doseTime.doseIndex, time)
                 syncAndRefresh()
+                refreshReminderSchedule()
             },
             doseTime.hour,
             doseTime.minute,
@@ -232,6 +281,30 @@ class MainActivity : Activity() {
     private fun syncAndRefresh() {
         WidgetUpdateHelper.updateAllWidgets(this)
         refreshUi()
+    }
+
+    private fun refreshReminderSchedule() {
+        if (!MedicineRepository.isReminderEnabled(this)) {
+            MedicineReminderScheduler.cancelAll(this)
+            return
+        }
+        if (MedicineReminderScheduler.canPostNotifications(this)) {
+            MedicineReminderScheduler.scheduleAllIfEnabled(this)
+        }
+    }
+
+    private fun requestNotificationPermissionAndSchedule() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                REQUEST_POST_NOTIFICATIONS
+            )
+            return
+        }
+        MedicineReminderScheduler.scheduleAllIfEnabled(this)
     }
 
     private fun updateStatusBadge(checked: Boolean) {
@@ -476,6 +549,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private const val REQUEST_POST_NOTIFICATIONS = 12_300
         private val COLOR_GREEN = Color.rgb(46, 125, 50)
         private val COLOR_TODAY_GREEN = Color.rgb(31, 122, 53)
         private val COLOR_RED = Color.rgb(211, 47, 47)

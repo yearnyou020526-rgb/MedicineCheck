@@ -22,6 +22,7 @@ object MedicineRepository {
     private const val KEY_DOSE_TIME_3 = "dose_time_3"
     private const val KEY_DOSE_HISTORY = "dose_history"
     private const val KEY_LEGACY_MIGRATED = "legacy_dose_history_migrated"
+    private const val KEY_REMINDERS_ENABLED = "reminders_enabled"
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val displayDateFormat = SimpleDateFormat("MM-dd", Locale.US)
@@ -59,6 +60,14 @@ object MedicineRepository {
             .putString(KEY_DOSE_UNIT, normalizeDoseUnit(doseUnit))
             .putString(KEY_DOSE_PERIOD, normalizeDosePeriod(dosePeriod))
             .apply()
+    }
+
+    fun isReminderEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(KEY_REMINDERS_ENABLED, true)
+    }
+
+    fun setReminderEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_REMINDERS_ENABLED, enabled).apply()
     }
 
     fun getMedicineDisplayText(context: Context): String {
