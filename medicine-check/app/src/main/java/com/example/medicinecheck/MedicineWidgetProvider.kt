@@ -1,0 +1,98 @@
+package com.example.medicinecheck
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.view.View
+import android.widget.RemoteViews
+
+class MedicineWidgetProvider : AppWidgetProvider() {
+
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == ACTION_MARK_TODAY) {
+            MedicineRepository.markTodayChecked(context)
+            updateAllWidgets(context)
+        }
+    }
+
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        appWidgetIds.forEach { appWidgetId ->
+            updateWidget(context, appWidgetManager, appWidgetId)
+        }
+    }
+
+    companion object {
+        const val ACTION_MARK_TODAY = "com.example.medicinecheck.ACTION_MARK_TODAY"
+
+        fun updateAllWidgets(context: Context) {
+            val manager = AppWidgetManager.getInstance(context)
+            val widgetIds = manager.getAppWidgetIds(
+                ComponentName(context, MedicineWidgetProvider::class.java)
+            )
+            widgetIds.forEach { widgetId ->
+                updateWidget(context, manager, widgetId)
+            }
+        }
+
+        private fun updateWidget(
+            context: Context,
+            manager: AppWidgetManager,
+            appWidgetId: Int
+        ) {
+            val checked = MedicineRepository.isTodayChecked(context)
+            val views = RemoteViews(context.packageName, R.layout.widget_medicine)
+
+            views.setInt(
+                R.id.widget_root,
+                "setBackgroundResource",
+                if (checked) R.drawable.widget_bg_checked else R.drawable.widget_bg_unchecked
+            )
+            views.setInt(R.id.widget_pill, "setImageAlpha", if (checked) 72 else 255)
+            views.setViewVisibility(R.id.widget_check, if (checked) View.VISIBLE else View.GONE)
+            views.setContentDescription(
+                R.id.widget_root,
+                if (checked) context.getString(R.string.widget_checked)
+                else context.getString(R.string.widget_unchecked)
+            )
+            views.setOnClickPendingIntent(
+                R.id.widget_root,
+                if (checked) undoConfirmIntent(context, appWidgetId) else markTodayIntent(context, appWidgetId)
+            )
+
+            manager.updateAppWidget(appWidgetId, views)
+        }
+
+        private fun markTodayIntent(context: Context, appWidgetId: Int): PendingIntent {
+            val intent = Intent(context, MedicineWidgetProvider::class.java).apply {
+                action = ACTION_MARK_TODAY
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            }
+            return PendingIntent.getBroadcast(
+                context,
+                appWidgetId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        private fun undoConfirmIntent(context: Context, appWidgetId: Int): PendingIntent {
+            val intent = Intent(context, ConfirmUndoActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            return PendingIntent.getActivity(
+                context,
+                10_000 + appWidgetId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+    }
+}

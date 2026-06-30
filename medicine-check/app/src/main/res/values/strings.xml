@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">吃药打卡</string>
+    <string name="medicine_name">药名设置</string>
+    <string name="medicine_name_hint">例如：降压药</string>
+    <string name="save">保存</string>
+    <string name="saved">已保存</string>
+    <string name="today_checked">今天是否已吃药：已吃</string>
+    <string name="today_unchecked">今天是否已吃药：未吃</string>
+    <string name="mark_today">记录今天已吃药</string>
+    <string name="cancel_today">取消今日打卡</string>
+    <string name="recent_30_days">最近 30 天记录</string>
+    <string name="history_checked">%1$s：已吃</string>
+    <string name="history_unchecked">%1$s：未吃</string>
+    <string name="widget_description">吃药打卡 1x1 小组件</string>
+    <string name="widget_checked">今日已完成</string>
+    <string name="widget_unchecked">待服药</string>
+    <string name="pill_icon">药片图标</string>
+    <string name="check_icon">已完成对勾</string>
+    <string name="undo_title">取消今日打卡？</string>
+    <string name="undo_message">确认后，小组件会恢复为未打卡状态。</string>
+    <string name="undo_confirm">确认取消</string>
+    <string name="undo_keep">保留打卡</string>
+</resources>
