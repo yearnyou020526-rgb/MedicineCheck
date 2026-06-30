@@ -9,6 +9,9 @@ import java.util.Locale
 object MedicineRepository {
     private const val PREFS_NAME = "medicine_check"
     private const val KEY_MEDICINE_NAME = "medicine_name"
+    private const val KEY_DOSE_VALUE = "dose_value"
+    private const val KEY_DOSE_UNIT = "dose_unit"
+    private const val KEY_DOSE_PERIOD = "dose_period"
 
     private const val KEY_CHECKED_DATE = "checked_date"
     private const val KEY_HISTORY = "history_dates"
@@ -29,6 +32,46 @@ object MedicineRepository {
 
     fun setMedicineName(context: Context, name: String) {
         prefs(context).edit().putString(KEY_MEDICINE_NAME, name.trim()).apply()
+    }
+
+    fun getDoseValue(context: Context): String {
+        return prefs(context).getString(KEY_DOSE_VALUE, "") ?: ""
+    }
+
+    fun getDoseUnit(context: Context): String {
+        return prefs(context).getString(KEY_DOSE_UNIT, DEFAULT_DOSE_UNIT) ?: DEFAULT_DOSE_UNIT
+    }
+
+    fun getDosePeriod(context: Context): String {
+        return prefs(context).getString(KEY_DOSE_PERIOD, DEFAULT_DOSE_PERIOD) ?: DEFAULT_DOSE_PERIOD
+    }
+
+    fun setMedicineInfo(
+        context: Context,
+        medicineName: String,
+        doseValue: String,
+        doseUnit: String,
+        dosePeriod: String
+    ) {
+        prefs(context).edit()
+            .putString(KEY_MEDICINE_NAME, medicineName.trim())
+            .putString(KEY_DOSE_VALUE, doseValue.trim())
+            .putString(KEY_DOSE_UNIT, normalizeDoseUnit(doseUnit))
+            .putString(KEY_DOSE_PERIOD, normalizeDosePeriod(dosePeriod))
+            .apply()
+    }
+
+    fun getMedicineDisplayText(context: Context): String {
+        val name = getMedicineName(context).trim()
+        val doseValue = getDoseValue(context).trim()
+        if (name.isBlank()) return ""
+        if (doseValue.isBlank()) return name
+        return "$name $doseValue${getDoseUnit(context)}${getDosePeriod(context)}"
+    }
+
+    fun getMedicineShortText(context: Context): String {
+        val name = getMedicineName(context).trim()
+        return name.ifBlank { getMedicineDisplayText(context) }
     }
 
     fun getDoseCount(context: Context): Int {
@@ -252,6 +295,20 @@ object MedicineRepository {
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun normalizeDoseUnit(unit: String): String {
+        return if (unit in DOSE_UNITS) unit else DEFAULT_DOSE_UNIT
+    }
+
+    private fun normalizeDosePeriod(period: String): String {
+        return if (period in DOSE_PERIODS) period else DEFAULT_DOSE_PERIOD
+    }
+
+    val DOSE_UNITS = listOf("mg", "g", "ml", "片", "粒")
+    val DOSE_PERIODS = listOf("/天", "/次")
+
+    private const val DEFAULT_DOSE_UNIT = "mg"
+    private const val DEFAULT_DOSE_PERIOD = "/天"
 }
 
 data class DoseTime(

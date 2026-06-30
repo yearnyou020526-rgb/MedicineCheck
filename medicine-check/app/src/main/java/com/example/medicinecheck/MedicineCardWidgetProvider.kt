@@ -6,15 +6,16 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.RemoteViews
 
-class MedicineWidgetProvider : AppWidgetProvider() {
+class MedicineCardWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action == ACTION_MARK_TODAY) {
+        if (intent.action == MedicineWidgetProvider.ACTION_MARK_TODAY) {
             MedicineRepository.markCurrentTargetChecked(context)
-            updateAllWidgets(context)
+            MedicineWidgetProvider.updateAllWidgets(context)
         }
     }
 
@@ -24,9 +25,9 @@ class MedicineWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray
     ) {
         appWidgetIds.forEach { appWidgetId ->
-            updateWidget(context, appWidgetManager, appWidgetId)
+            updateCardWidget(context, appWidgetManager, appWidgetId)
         }
-        MedicineCardWidgetProvider.updateAllCardWidgets(context)
+        MedicineWidgetProvider.updateAllWidgets(context)
         MidnightUpdateScheduler.scheduleNext(context)
     }
 
@@ -41,63 +42,63 @@ class MedicineWidgetProvider : AppWidgetProvider() {
     }
 
     companion object {
-        const val ACTION_MARK_TODAY = "com.example.medicinecheck.ACTION_MARK_TODAY"
-        const val EXTRA_DATE_KEY = "com.example.medicinecheck.EXTRA_DATE_KEY"
-        const val EXTRA_DOSE_INDEX = "com.example.medicinecheck.EXTRA_DOSE_INDEX"
-
-        fun updateAllWidgets(context: Context) {
+        fun updateAllCardWidgets(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val widgetIds = manager.getAppWidgetIds(
-                ComponentName(context, MedicineWidgetProvider::class.java)
+                ComponentName(context, MedicineCardWidgetProvider::class.java)
             )
             widgetIds.forEach { widgetId ->
-                updateWidget(context, manager, widgetId)
+                updateCardWidget(context, manager, widgetId)
             }
-            updateCardWidgets(context)
-            MidnightUpdateScheduler.scheduleNext(context)
         }
 
-        private fun updateWidget(
+        private fun updateCardWidget(
             context: Context,
             manager: AppWidgetManager,
             appWidgetId: Int
         ) {
             val target = MedicineRepository.getCurrentTarget(context)
-            val views = RemoteViews(context.packageName, R.layout.widget_medicine)
+            val views = RemoteViews(context.packageName, R.layout.widget_medicine_card)
+            val medicineText = MedicineRepository.getMedicineDisplayText(context)
+                .ifBlank { context.getString(R.string.medicine_not_set) }
 
-            views.setImageViewResource(
-                R.id.widget_state_image,
-                if (target.checked) R.drawable.widget_checked_green else R.drawable.widget_unchecked_red
+            views.setInt(
+                R.id.card_root,
+                "setBackgroundResource",
+                if (target.checked) R.drawable.widget_card_bg_checked
+                else R.drawable.widget_card_bg_unchecked
             )
+            views.setInt(R.id.card_pill, "setImageAlpha", if (target.checked) 86 else 255)
+            views.setViewVisibility(R.id.card_check, if (target.checked) View.VISIBLE else View.GONE)
+            views.setTextViewText(R.id.card_medicine_text, medicineText)
             views.setTextViewText(
-                R.id.widget_medicine_text,
-                MedicineRepository.getMedicineShortText(context)
+                R.id.card_status_text,
+                if (target.checked) context.getString(R.string.status_checked_short)
+                else context.getString(R.string.widget_waiting_short)
             )
+            views.setTextViewText(R.id.card_dose_text, "第${target.doseIndex}次")
             views.setContentDescription(
-                R.id.widget_root,
+                R.id.card_root,
                 if (target.checked) context.getString(R.string.widget_checked)
                 else context.getString(R.string.widget_unchecked)
             )
             views.setOnClickPendingIntent(
-                R.id.widget_root,
-                if (target.checked) undoConfirmIntent(context, appWidgetId) else markTodayIntent(context, appWidgetId)
+                R.id.card_root,
+                if (target.checked) undoConfirmIntent(context, appWidgetId)
+                else markCurrentTargetIntent(context, appWidgetId)
             )
 
             manager.updateAppWidget(appWidgetId, views)
         }
 
-        private fun updateCardWidgets(context: Context) {
-            MedicineCardWidgetProvider.updateAllCardWidgets(context)
-        }
-
-        private fun markTodayIntent(context: Context, appWidgetId: Int): PendingIntent {
-            val intent = Intent(context, MedicineWidgetProvider::class.java).apply {
-                action = ACTION_MARK_TODAY
+        private fun markCurrentTargetIntent(context: Context, appWidgetId: Int): PendingIntent {
+            val intent = Intent(context, MedicineCardWidgetProvider::class.java).apply {
+                action = MedicineWidgetProvider.ACTION_MARK_TODAY
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
             }
             return PendingIntent.getBroadcast(
                 context,
-                appWidgetId,
+                20_000 + appWidgetId,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
@@ -107,12 +108,12 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             val target = MedicineRepository.getCurrentTarget(context)
             val intent = Intent(context, ConfirmUndoActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                putExtra(EXTRA_DATE_KEY, target.dateKey)
-                putExtra(EXTRA_DOSE_INDEX, target.doseIndex)
+                putExtra(MedicineWidgetProvider.EXTRA_DATE_KEY, target.dateKey)
+                putExtra(MedicineWidgetProvider.EXTRA_DOSE_INDEX, target.doseIndex)
             }
             return PendingIntent.getActivity(
                 context,
-                10_000 + appWidgetId,
+                30_000 + appWidgetId,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )

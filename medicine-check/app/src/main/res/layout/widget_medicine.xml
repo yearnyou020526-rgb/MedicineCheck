@@ -14,4 +14,23 @@
         android:contentDescription="@string/widget_unchecked"
         android:scaleType="centerCrop"
         android:src="@drawable/widget_unchecked_red" />
+
+    <TextView
+        android:id="@+id/widget_medicine_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
+        android:layout_marginBottom="6dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="1"
+        android:shadowColor="#66000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="2"
+        android:textColor="@android:color/white"
+        android:textSize="10sp"
+        android:textStyle="bold" />
 </FrameLayout>

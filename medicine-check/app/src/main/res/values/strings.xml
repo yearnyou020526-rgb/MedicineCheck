@@ -4,10 +4,12 @@
     <string name="app_subtitle">今日服药记录</string>
     <string name="today_card_title">今日状态</string>
     <string name="today_progress_title">今日进度</string>
+    <string name="medicine_info_title">药品信息</string>
     <string name="medicine_name">药名设置</string>
     <string name="medicine_name_hint">例如：降压药</string>
+    <string name="dose_value_hint">剂量，例如：20</string>
     <string name="medicine_not_set">未设置药名</string>
-    <string name="save">保存药名</string>
+    <string name="save">保存药品信息</string>
     <string name="saved">已保存</string>
     <string name="today_checked">今天是否已吃药：已吃</string>
     <string name="today_unchecked">今天是否已吃药：未吃</string>
@@ -26,8 +28,11 @@
     <string name="history_checked">%1$s：已吃</string>
     <string name="history_unchecked">%1$s：未吃</string>
     <string name="widget_description">吃药打卡 1x1 小组件</string>
+    <string name="widget_card_name">吃药打卡卡片</string>
+    <string name="widget_card_description">吃药打卡卡片</string>
     <string name="widget_checked">今日已完成</string>
     <string name="widget_unchecked">待服药</string>
+    <string name="widget_waiting_short">待吃</string>
     <string name="pill_icon">药片图标</string>
     <string name="check_icon">已完成对勾</string>
     <string name="undo_title">取消今日打卡？</string>

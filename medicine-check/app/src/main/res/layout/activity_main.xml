@@ -42,7 +42,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/medicine_name"
+                android:text="@string/medicine_info_title"
                 android:textColor="@color/text_primary"
                 android:textSize="17sp"
                 android:textStyle="bold" />
@@ -61,6 +61,50 @@
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_tertiary"
                 android:textSize="15sp" />
+
+            <EditText
+                android:id="@+id/dose_value_input"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_input"
+                android:hint="@string/dose_value_hint"
+                android:inputType="text"
+                android:maxLines="1"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_tertiary"
+                android:textSize="15sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <Spinner
+                    android:id="@+id/dose_unit_spinner"
+                    android:layout_width="0dp"
+                    android:layout_height="46dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_input"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp" />
+
+                <Space
+                    android:layout_width="10dp"
+                    android:layout_height="1dp" />
+
+                <Spinner
+                    android:id="@+id/dose_period_spinner"
+                    android:layout_width="0dp"
+                    android:layout_height="46dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_input"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp" />
+            </LinearLayout>
 
             <Button
                 android:id="@+id/save_name_button"

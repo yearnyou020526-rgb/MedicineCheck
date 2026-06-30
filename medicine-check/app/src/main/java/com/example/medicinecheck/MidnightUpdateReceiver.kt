@@ -21,7 +21,10 @@ object MidnightUpdateScheduler {
     private const val REQUEST_CODE_SCHEDULED_UPDATE = 24_000
 
     fun scheduleNext(context: Context) {
-        if (!hasWidgets(context)) return
+        if (!hasWidgets(context)) {
+            cancel(context)
+            return
+        }
 
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         val pendingIntent = pendingIntent(context)
@@ -89,6 +92,9 @@ object MidnightUpdateScheduler {
         val widgetIds = manager.getAppWidgetIds(
             ComponentName(context, MedicineWidgetProvider::class.java)
         )
-        return widgetIds.isNotEmpty()
+        val cardWidgetIds = manager.getAppWidgetIds(
+            ComponentName(context, MedicineCardWidgetProvider::class.java)
+        )
+        return widgetIds.isNotEmpty() || cardWidgetIds.isNotEmpty()
     }
 }

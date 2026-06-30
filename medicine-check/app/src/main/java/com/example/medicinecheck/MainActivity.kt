@@ -8,10 +8,12 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.NumberPicker
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
@@ -20,6 +22,9 @@ import java.util.Locale
 
 class MainActivity : Activity() {
     private lateinit var medicineNameInput: EditText
+    private lateinit var doseValueInput: EditText
+    private lateinit var doseUnitSpinner: Spinner
+    private lateinit var dosePeriodSpinner: Spinner
     private lateinit var medicineDisplayText: TextView
     private lateinit var statusBadge: TextView
     private lateinit var progressText: TextView
@@ -36,6 +41,9 @@ class MainActivity : Activity() {
         setContentView(R.layout.activity_main)
 
         medicineNameInput = findViewById(R.id.medicine_name_input)
+        doseValueInput = findViewById(R.id.dose_value_input)
+        doseUnitSpinner = findViewById(R.id.dose_unit_spinner)
+        dosePeriodSpinner = findViewById(R.id.dose_period_spinner)
         medicineDisplayText = findViewById(R.id.medicine_display_text)
         statusBadge = findViewById(R.id.status_badge)
         progressText = findViewById(R.id.progress_text)
@@ -46,9 +54,16 @@ class MainActivity : Activity() {
         calendarContainer = findViewById(R.id.calendar_container)
 
         configureDoseCountPicker()
+        configureMedicineSpinners()
 
         findViewById<Button>(R.id.save_name_button).setOnClickListener {
-            MedicineRepository.setMedicineName(this, medicineNameInput.text.toString())
+            MedicineRepository.setMedicineInfo(
+                context = this,
+                medicineName = medicineNameInput.text.toString(),
+                doseValue = doseValueInput.text.toString(),
+                doseUnit = doseUnitSpinner.selectedItem?.toString() ?: "mg",
+                dosePeriod = dosePeriodSpinner.selectedItem?.toString() ?: "/天"
+            )
             syncAndRefresh()
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
         }
@@ -82,12 +97,33 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun configureMedicineSpinners() {
+        doseUnitSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            MedicineRepository.DOSE_UNITS
+        )
+        dosePeriodSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            MedicineRepository.DOSE_PERIODS
+        )
+    }
+
     private fun refreshUi() {
         val medicineName = MedicineRepository.getMedicineName(this)
         if (medicineNameInput.text.toString() != medicineName) {
             medicineNameInput.setText(medicineName)
         }
-        medicineDisplayText.text = medicineName.ifBlank {
+        val doseValue = MedicineRepository.getDoseValue(this)
+        if (doseValueInput.text.toString() != doseValue) {
+            doseValueInput.setText(doseValue)
+        }
+        setSpinnerSelection(doseUnitSpinner, MedicineRepository.getDoseUnit(this))
+        setSpinnerSelection(dosePeriodSpinner, MedicineRepository.getDosePeriod(this))
+
+        val medicineDisplay = MedicineRepository.getMedicineDisplayText(this)
+        medicineDisplayText.text = medicineDisplay.ifBlank {
             getString(R.string.medicine_not_set)
         }
 
@@ -115,6 +151,18 @@ class MainActivity : Activity() {
 
         renderDoseTimes()
         renderCalendar()
+    }
+
+    private fun setSpinnerSelection(spinner: Spinner, value: String) {
+        val adapter = spinner.adapter ?: return
+        for (index in 0 until adapter.count) {
+            if (adapter.getItem(index)?.toString() == value) {
+                if (spinner.selectedItemPosition != index) {
+                    spinner.setSelection(index)
+                }
+                return
+            }
+        }
     }
 
     private fun renderDoseTimes() {

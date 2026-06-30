@@ -27,7 +27,8 @@
 
         <receiver
             android:name=".MedicineWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.example.medicinecheck.ACTION_MARK_TODAY" />
@@ -36,6 +37,20 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/medicine_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".MedicineCardWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_card_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.medicinecheck.ACTION_MARK_TODAY" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/medicine_card_widget_info" />
         </receiver>
 
         <receiver
