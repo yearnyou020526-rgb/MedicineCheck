@@ -21,6 +21,7 @@ object MedicineRepository {
     private const val KEY_DOSE_TIME_2 = "dose_time_2"
     private const val KEY_DOSE_TIME_3 = "dose_time_3"
     private const val KEY_DOSE_HISTORY = "dose_history"
+    private const val KEY_MISSED_HISTORY = "missed_history"
     private const val KEY_LEGACY_MIGRATED = "legacy_dose_history_migrated"
     private const val KEY_REMINDERS_ENABLED = "reminders_enabled"
 
@@ -129,11 +130,13 @@ object MedicineRepository {
         migrateLegacyHistory(context)
         val today = dateFormat.format(calendar.time)
         val target = getTargetDoseTimeFor(context, calendar)
+        val status = getDoseRecordStatus(context, today, target.doseIndex)
         return DoseTarget(
             dateKey = today,
             doseIndex = target.doseIndex,
             time = target.time,
-            checked = isDoseChecked(context, today, target.doseIndex)
+            status = status,
+            checked = status == RecordStatus.DONE
         )
     }
 
@@ -162,15 +165,47 @@ object MedicineRepository {
     fun markDoseChecked(context: Context, dateKey: String, doseIndex: Int) {
         migrateLegacyHistory(context)
         val history = getDoseHistory(context).toMutableSet()
+        val missedHistory = getMissedHistory(context).toMutableSet()
         history.add(doseRecordKey(dateKey, doseIndex))
-        prefs(context).edit().putStringSet(KEY_DOSE_HISTORY, history).apply()
+        missedHistory.remove(doseRecordKey(dateKey, doseIndex))
+        prefs(context).edit()
+            .putStringSet(KEY_DOSE_HISTORY, history)
+            .putStringSet(KEY_MISSED_HISTORY, missedHistory)
+            .apply()
     }
 
     fun clearDoseChecked(context: Context, dateKey: String, doseIndex: Int) {
+        clearDoseRecord(context, dateKey, doseIndex)
+    }
+
+    fun markDoseMissed(context: Context, dateKey: String, doseIndex: Int) {
         migrateLegacyHistory(context)
         val history = getDoseHistory(context).toMutableSet()
+        val missedHistory = getMissedHistory(context).toMutableSet()
         history.remove(doseRecordKey(dateKey, doseIndex))
-        prefs(context).edit().putStringSet(KEY_DOSE_HISTORY, history).apply()
+        missedHistory.add(doseRecordKey(dateKey, doseIndex))
+        prefs(context).edit()
+            .putStringSet(KEY_DOSE_HISTORY, history)
+            .putStringSet(KEY_MISSED_HISTORY, missedHistory)
+            .apply()
+    }
+
+    fun markCurrentTargetMissed(context: Context) {
+        val target = getCurrentTarget(context)
+        markDoseMissed(context, target.dateKey, target.doseIndex)
+    }
+
+    fun clearDoseRecord(context: Context, dateKey: String, doseIndex: Int) {
+        migrateLegacyHistory(context)
+        val history = getDoseHistory(context).toMutableSet()
+        val missedHistory = getMissedHistory(context).toMutableSet()
+        val key = doseRecordKey(dateKey, doseIndex)
+        history.remove(key)
+        missedHistory.remove(key)
+        prefs(context).edit()
+            .putStringSet(KEY_DOSE_HISTORY, history)
+            .putStringSet(KEY_MISSED_HISTORY, missedHistory)
+            .apply()
     }
 
     fun isDoseChecked(context: Context, dateKey: String, doseIndex: Int): Boolean {
@@ -178,22 +213,46 @@ object MedicineRepository {
         return getDoseHistory(context).contains(doseRecordKey(dateKey, doseIndex))
     }
 
+    fun isDoseMissed(context: Context, dateKey: String, doseIndex: Int): Boolean {
+        migrateLegacyHistory(context)
+        return getMissedHistory(context).contains(doseRecordKey(dateKey, doseIndex))
+    }
+
+    fun getDoseRecordStatus(context: Context, dateKey: String, doseIndex: Int): RecordStatus {
+        migrateLegacyHistory(context)
+        val key = doseRecordKey(dateKey, doseIndex)
+        return when {
+            getDoseHistory(context).contains(key) -> RecordStatus.DONE
+            getMissedHistory(context).contains(key) -> RecordStatus.MISSED
+            else -> RecordStatus.NONE
+        }
+    }
+
     fun getDoseProgress(context: Context, dateKey: String): DoseProgress {
         migrateLegacyHistory(context)
         val count = getDoseCount(context)
         val history = getDoseHistory(context)
+        val missedHistory = getMissedHistory(context)
         val completed = (1..count).count { doseIndex ->
             history.contains(doseRecordKey(dateKey, doseIndex))
+        }
+        val missed = (1..count).count { doseIndex ->
+            missedHistory.contains(doseRecordKey(dateKey, doseIndex))
         }
         return DoseProgress(
             dateKey = dateKey,
             completedDoses = completed,
-            totalDoses = count
+            totalDoses = count,
+            missedDoses = missed
         )
     }
 
     fun getTodayProgress(context: Context): DoseProgress {
         return getDoseProgress(context, todayKey())
+    }
+
+    fun getTodayDateKey(): String {
+        return todayKey()
     }
 
     fun getRecentDays(context: Context, count: Int = 30): List<DayRecord> {
@@ -207,11 +266,82 @@ object MedicineRepository {
                 dateKey = key,
                 displayDate = displayDateFormat.format(date),
                 completedDoses = progress.completedDoses,
-                totalDoses = progress.totalDoses
+                totalDoses = progress.totalDoses,
+                missedDoses = progress.missedDoses
             )
             calendar.add(Calendar.DAY_OF_YEAR, -1)
             record
         }
+    }
+
+    fun getTodaySummary(context: Context): TodaySummary {
+        val progress = getTodayProgress(context)
+        val target = getCurrentTarget(context)
+        return TodaySummary(
+            totalDoses = progress.totalDoses,
+            completedDoses = progress.completedDoses,
+            missedDoses = progress.missedDoses,
+            pendingDoses = progress.pendingDoses,
+            currentTarget = target
+        )
+    }
+
+    fun getStats(context: Context): StatsSummary {
+        val today = Calendar.getInstance()
+        val monthStart = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        var consecutiveDays = 0
+        val streakCalendar = today.clone() as Calendar
+        while (true) {
+            val progress = getDoseProgress(context, dateFormat.format(streakCalendar.time))
+            if (progress.isFullyComplete) {
+                consecutiveDays++
+                streakCalendar.add(Calendar.DAY_OF_YEAR, -1)
+            } else {
+                break
+            }
+        }
+
+        var monthTaskDays = 0
+        var monthCompleteDays = 0
+        var monthMissedDoses = 0
+        val monthCalendar = monthStart.clone() as Calendar
+        while (!monthCalendar.after(today)) {
+            val progress = getDoseProgress(context, dateFormat.format(monthCalendar.time))
+            monthTaskDays++
+            if (progress.isFullyComplete) monthCompleteDays++
+            monthMissedDoses += progress.missedDoses
+            monthCalendar.add(Calendar.DAY_OF_YEAR, 1)
+        }
+
+        var recent7MissedDoses = 0
+        val recentCalendar = today.clone() as Calendar
+        repeat(7) {
+            recent7MissedDoses += getDoseProgress(
+                context,
+                dateFormat.format(recentCalendar.time)
+            ).missedDoses
+            recentCalendar.add(Calendar.DAY_OF_YEAR, -1)
+        }
+
+        val completionRate = if (monthTaskDays == 0) {
+            0
+        } else {
+            (monthCompleteDays * 100) / monthTaskDays
+        }
+
+        return StatsSummary(
+            consecutiveDays = consecutiveDays,
+            monthCompletionRate = completionRate,
+            recent7MissedDoses = recent7MissedDoses,
+            monthMissedDoses = monthMissedDoses
+        )
     }
 
     fun nextRefreshTimeMillis(context: Context): Long {
@@ -312,6 +442,10 @@ object MedicineRepository {
         return prefs(context).getStringSet(KEY_DOSE_HISTORY, emptySet()) ?: emptySet()
     }
 
+    private fun getMissedHistory(context: Context): Set<String> {
+        return prefs(context).getStringSet(KEY_MISSED_HISTORY, emptySet()) ?: emptySet()
+    }
+
     private fun todayKey(): String {
         return dateFormat.format(Date())
     }
@@ -334,6 +468,12 @@ object MedicineRepository {
     private const val DEFAULT_DOSE_PERIOD = "/天"
 }
 
+enum class RecordStatus {
+    NONE,
+    DONE,
+    MISSED
+}
+
 data class DoseTime(
     val doseIndex: Int,
     val time: String
@@ -347,25 +487,48 @@ data class DoseTarget(
     val dateKey: String,
     val doseIndex: Int,
     val time: String,
+    val status: RecordStatus,
     val checked: Boolean
-)
+) {
+    val missed: Boolean = status == RecordStatus.MISSED
+}
 
 data class DoseProgress(
     val dateKey: String,
     val completedDoses: Int,
-    val totalDoses: Int
+    val totalDoses: Int,
+    val missedDoses: Int
 ) {
     val isNoneComplete: Boolean = completedDoses == 0
     val isPartiallyComplete: Boolean = completedDoses in 1 until totalDoses
     val isFullyComplete: Boolean = completedDoses >= totalDoses
+    val pendingDoses: Int = (totalDoses - completedDoses - missedDoses).coerceAtLeast(0)
+    val hasMissed: Boolean = missedDoses > 0
 }
 
 data class DayRecord(
     val dateKey: String,
     val displayDate: String,
     val completedDoses: Int,
-    val totalDoses: Int
+    val totalDoses: Int,
+    val missedDoses: Int
 ) {
     val checked: Boolean = completedDoses >= totalDoses
     val partiallyChecked: Boolean = completedDoses in 1 until totalDoses
+    val hasMissed: Boolean = missedDoses > 0
 }
+
+data class TodaySummary(
+    val totalDoses: Int,
+    val completedDoses: Int,
+    val missedDoses: Int,
+    val pendingDoses: Int,
+    val currentTarget: DoseTarget
+)
+
+data class StatsSummary(
+    val consecutiveDays: Int,
+    val monthCompletionRate: Int,
+    val recent7MissedDoses: Int,
+    val monthMissedDoses: Int
+)

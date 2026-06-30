@@ -16,8 +16,14 @@ import java.util.Calendar
 class MedicineReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val doseIndex = intent.getIntExtra(EXTRA_DOSE_INDEX, 1).coerceIn(1, 3)
+        val status = MedicineRepository.getDoseRecordStatus(
+            context,
+            MedicineRepository.getTodayDateKey(),
+            doseIndex
+        )
         if (MedicineRepository.isReminderEnabled(context) &&
-            MedicineReminderScheduler.canPostNotifications(context)
+            MedicineReminderScheduler.canPostNotifications(context) &&
+            status == RecordStatus.NONE
         ) {
             MedicineReminderScheduler.showReminder(context, doseIndex)
         }

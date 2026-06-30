@@ -15,11 +15,12 @@ class ConfirmUndoActivity : Activity() {
                 val dateKey = intent.getStringExtra(MedicineWidgetProvider.EXTRA_DATE_KEY)
                 val doseIndex = intent.getIntExtra(MedicineWidgetProvider.EXTRA_DOSE_INDEX, -1)
                 if (dateKey != null && doseIndex in 1..3) {
-                    MedicineRepository.clearDoseChecked(this, dateKey, doseIndex)
+                    MedicineRepository.clearDoseRecord(this, dateKey, doseIndex)
                 } else {
                     MedicineRepository.clearCurrentTargetChecked(this)
                 }
                 WidgetUpdateHelper.updateAllWidgets(this)
+                MedicineReminderScheduler.scheduleAllIfEnabled(this)
                 finish()
             }
             .setNegativeButton(R.string.undo_keep) { _, _ -> finish() }

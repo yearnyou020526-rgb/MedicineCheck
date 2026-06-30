@@ -73,8 +73,11 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.card_medicine_text, medicineText)
             views.setTextViewText(
                 R.id.card_status_text,
-                if (target.checked) context.getString(R.string.status_checked_short)
-                else context.getString(R.string.widget_waiting_short)
+                when (target.status) {
+                    RecordStatus.DONE -> context.getString(R.string.status_checked_short)
+                    RecordStatus.MISSED -> context.getString(R.string.status_missed_short)
+                    RecordStatus.NONE -> context.getString(R.string.widget_waiting_short)
+                }
             )
             if (MedicineRepository.getDoseCount(context) == 1) {
                 views.setViewVisibility(R.id.card_dose_text, View.GONE)

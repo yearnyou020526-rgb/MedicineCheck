@@ -15,8 +15,11 @@
     <string name="today_unchecked">今天是否已吃药：未吃</string>
     <string name="status_checked_short">已吃</string>
     <string name="status_unchecked_short">未吃</string>
+    <string name="status_missed_short">漏吃</string>
     <string name="mark_today">标记为已吃</string>
     <string name="cancel_today">取消今日打卡</string>
+    <string name="mark_missed">标记本次漏吃</string>
+    <string name="clear_missed">清除本次漏吃</string>
     <string name="dose_count_title">每日服药次数</string>
     <string name="dose_times_title">服药时间</string>
     <string name="dose_time_label">第 %1$d 次服药时间</string>
@@ -26,10 +29,25 @@
     <string name="reminder_notification_title">吃药提醒</string>
     <string name="reminder_notification_content">该吃药了：%1$s%2$s</string>
     <string name="today_progress_format">今日进度：%1$d/%2$d</string>
+    <string name="today_overview_counts">已完成 %1$d 次　漏吃 %2$d 次　剩余 %3$d 次</string>
     <string name="current_target_format">当前：第 %1$d 次，%2$s，%3$s</string>
+    <string name="current_target_done">今日已完成</string>
     <string name="recent_30_days">最近 30 天记录</string>
     <string name="calendar_title">服药日历</string>
-    <string name="calendar_legend">绿色 = 全部完成　橙色 = 部分完成　白色 = 未完成</string>
+    <string name="calendar_legend">绿色 = 全部完成　橙色 = 部分完成　红边 = 有漏吃　白色 = 未完成</string>
+    <string name="stats_title">统计</string>
+    <string name="stats_streak">连续完成：%1$d 天</string>
+    <string name="stats_month_rate">本月完成率：%1$d%%</string>
+    <string name="stats_recent_missed">最近 7 天漏吃：%1$d 次</string>
+    <string name="stats_month_missed">本月漏吃：%1$d 次</string>
+    <string name="record_detail_title">%1$s 记录</string>
+    <string name="record_detail_item">第 %1$d 次　%2$s　%3$s</string>
+    <string name="record_action_done">补记已吃</string>
+    <string name="record_action_missed">标记漏吃</string>
+    <string name="record_action_clear">清除记录</string>
+    <string name="record_status_none">未记录</string>
+    <string name="confirm_change_title">确认修改记录？</string>
+    <string name="confirm_change_message">当前记录为漏吃，确认要改为已吃或清除吗？</string>
     <string name="history_checked">%1$s：已吃</string>
     <string name="history_unchecked">%1$s：未吃</string>
     <string name="widget_description">吃药打卡 1x1 小组件</string>

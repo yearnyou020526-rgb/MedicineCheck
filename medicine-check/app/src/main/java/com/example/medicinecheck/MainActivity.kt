@@ -32,11 +32,17 @@ class MainActivity : Activity() {
     private lateinit var medicineDisplayText: TextView
     private lateinit var statusBadge: TextView
     private lateinit var progressText: TextView
+    private lateinit var overviewCountsText: TextView
     private lateinit var currentTargetText: TextView
     private lateinit var toggleButton: Button
+    private lateinit var markMissedButton: Button
     private lateinit var doseCountPicker: NumberPicker
     private lateinit var doseTimesContainer: LinearLayout
     private lateinit var calendarContainer: LinearLayout
+    private lateinit var statsStreakText: TextView
+    private lateinit var statsMonthRateText: TextView
+    private lateinit var statsRecentMissedText: TextView
+    private lateinit var statsMonthMissedText: TextView
     private lateinit var reminderSwitch: Switch
     private var updatingReminderSwitch = false
 
@@ -53,11 +59,17 @@ class MainActivity : Activity() {
         medicineDisplayText = findViewById(R.id.medicine_display_text)
         statusBadge = findViewById(R.id.status_badge)
         progressText = findViewById(R.id.progress_text)
+        overviewCountsText = findViewById(R.id.overview_counts_text)
         currentTargetText = findViewById(R.id.current_target_text)
         toggleButton = findViewById(R.id.toggle_today_button)
+        markMissedButton = findViewById(R.id.mark_missed_button)
         doseCountPicker = findViewById(R.id.dose_count_picker)
         doseTimesContainer = findViewById(R.id.dose_times_container)
         calendarContainer = findViewById(R.id.calendar_container)
+        statsStreakText = findViewById(R.id.stats_streak_text)
+        statsMonthRateText = findViewById(R.id.stats_month_rate_text)
+        statsRecentMissedText = findViewById(R.id.stats_recent_missed_text)
+        statsMonthMissedText = findViewById(R.id.stats_month_missed_text)
         reminderSwitch = findViewById(R.id.reminder_switch)
 
         configureDoseCountPicker()
@@ -79,11 +91,35 @@ class MainActivity : Activity() {
 
         toggleButton.setOnClickListener {
             val target = MedicineRepository.getCurrentTarget(this)
-            if (target.checked) {
-                showCancelCurrentTargetDialog(target)
-            } else {
-                MedicineRepository.markCurrentTargetChecked(this)
-                syncAndRefresh()
+            when (target.status) {
+                RecordStatus.DONE -> showCancelCurrentTargetDialog(target)
+                RecordStatus.MISSED -> confirmChangeFromMissed {
+                    MedicineRepository.markCurrentTargetChecked(this)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
+                RecordStatus.NONE -> {
+                    MedicineRepository.markCurrentTargetChecked(this)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
+            }
+        }
+
+        markMissedButton.setOnClickListener {
+            val target = MedicineRepository.getCurrentTarget(this)
+            when (target.status) {
+                RecordStatus.DONE -> showCancelCurrentTargetDialog(target)
+                RecordStatus.MISSED -> confirmChangeFromMissed {
+                    MedicineRepository.clearDoseRecord(this, target.dateKey, target.doseIndex)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
+                RecordStatus.NONE -> {
+                    MedicineRepository.markCurrentTargetMissed(this)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
             }
         }
 
@@ -180,25 +216,33 @@ class MainActivity : Activity() {
         reminderSwitch.isChecked = MedicineRepository.isReminderEnabled(this)
         updatingReminderSwitch = false
 
-        val target = MedicineRepository.getCurrentTarget(this)
+        val summary = MedicineRepository.getTodaySummary(this)
+        val target = summary.currentTarget
         val progress = MedicineRepository.getTodayProgress(this)
-        updateStatusBadge(target.checked)
-        updateToggleButton(target.checked)
+        updateStatusBadge(target.status)
+        updateToggleButton(target.status)
+        updateMissedButton(target.status)
         progressText.text = getString(
             R.string.today_progress_format,
             progress.completedDoses,
             progress.totalDoses
         )
+        overviewCountsText.text = getString(
+            R.string.today_overview_counts,
+            summary.completedDoses,
+            summary.missedDoses,
+            summary.pendingDoses
+        )
         currentTargetText.text = getString(
             R.string.current_target_format,
             target.doseIndex,
             target.time,
-            if (target.checked) getString(R.string.status_checked_short)
-            else getString(R.string.status_unchecked_short)
+            statusLabel(target.status)
         )
 
         renderDoseTimes()
         renderCalendar()
+        renderStats()
     }
 
     private fun setSpinnerSelection(spinner: Spinner, value: String) {
@@ -271,10 +315,20 @@ class MainActivity : Activity() {
             .setTitle(R.string.undo_title)
             .setMessage(R.string.undo_message)
             .setPositiveButton(R.string.undo_confirm) { _, _ ->
-                MedicineRepository.clearDoseChecked(this, target.dateKey, target.doseIndex)
+                MedicineRepository.clearDoseRecord(this, target.dateKey, target.doseIndex)
                 syncAndRefresh()
+                refreshReminderSchedule()
             }
             .setNegativeButton(R.string.undo_keep, null)
+            .show()
+    }
+
+    private fun confirmChangeFromMissed(action: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.confirm_change_title)
+            .setMessage(R.string.confirm_change_message)
+            .setPositiveButton(android.R.string.ok) { _, _ -> action() }
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
@@ -307,29 +361,60 @@ class MainActivity : Activity() {
         MedicineReminderScheduler.scheduleAllIfEnabled(this)
     }
 
-    private fun updateStatusBadge(checked: Boolean) {
-        statusBadge.text = if (checked) {
-            getString(R.string.status_checked_short)
-        } else {
-            getString(R.string.status_unchecked_short)
-        }
+    private fun updateStatusBadge(status: RecordStatus) {
+        statusBadge.text = statusLabel(status)
         statusBadge.background = roundedDrawable(
-            color = if (checked) COLOR_GREEN else COLOR_RED,
+            color = when (status) {
+                RecordStatus.DONE -> COLOR_GREEN
+                RecordStatus.MISSED -> COLOR_PARTIAL_STROKE
+                RecordStatus.NONE -> COLOR_RED
+            },
             radiusDp = 14f
         )
     }
 
-    private fun updateToggleButton(checked: Boolean) {
-        toggleButton.text = if (checked) {
-            getString(R.string.cancel_today)
-        } else {
-            getString(R.string.mark_today)
+    private fun updateToggleButton(status: RecordStatus) {
+        toggleButton.text = when (status) {
+            RecordStatus.DONE -> getString(R.string.cancel_today)
+            RecordStatus.MISSED -> getString(R.string.mark_today)
+            RecordStatus.NONE -> getString(R.string.mark_today)
         }
-        toggleButton.setTextColor(if (checked) COLOR_RED else Color.WHITE)
+        toggleButton.setTextColor(if (status == RecordStatus.DONE) COLOR_RED else Color.WHITE)
         toggleButton.background = roundedDrawable(
-            color = if (checked) COLOR_CANCEL_BUTTON else COLOR_GREEN,
+            color = if (status == RecordStatus.DONE) COLOR_CANCEL_BUTTON else COLOR_GREEN,
             radiusDp = 16f
         )
+    }
+
+    private fun updateMissedButton(status: RecordStatus) {
+        markMissedButton.text = when (status) {
+            RecordStatus.DONE -> getString(R.string.cancel_today)
+            RecordStatus.MISSED -> getString(R.string.clear_missed)
+            RecordStatus.NONE -> getString(R.string.mark_missed)
+        }
+        markMissedButton.setTextColor(
+            when (status) {
+                RecordStatus.MISSED -> COLOR_PARTIAL_TEXT
+                RecordStatus.DONE -> COLOR_RED
+                RecordStatus.NONE -> COLOR_TEXT_SECONDARY
+            }
+        )
+    }
+
+    private fun statusLabel(status: RecordStatus): String {
+        return when (status) {
+            RecordStatus.DONE -> getString(R.string.status_checked_short)
+            RecordStatus.MISSED -> getString(R.string.status_missed_short)
+            RecordStatus.NONE -> getString(R.string.status_unchecked_short)
+        }
+    }
+
+    private fun renderStats() {
+        val stats = MedicineRepository.getStats(this)
+        statsStreakText.text = getString(R.string.stats_streak, stats.consecutiveDays)
+        statsMonthRateText.text = getString(R.string.stats_month_rate, stats.monthCompletionRate)
+        statsRecentMissedText.text = getString(R.string.stats_recent_missed, stats.recent7MissedDoses)
+        statsMonthMissedText.text = getString(R.string.stats_month_missed, stats.monthMissedDoses)
     }
 
     private fun renderCalendar() {
@@ -423,8 +508,33 @@ class MainActivity : Activity() {
 
         view.text = day.toString()
         view.typeface = if (isToday) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+        view.setOnClickListener {
+            if (!isFuture) {
+                showDayRecordDialog(dateKey)
+            }
+        }
 
         when {
+            record?.hasMissed == true && record.checked -> {
+                view.setTextColor(Color.WHITE)
+                view.background = roundedDrawable(
+                    color = if (isToday) COLOR_TODAY_GREEN else COLOR_GREEN,
+                    radiusDp = 10f,
+                    strokeColor = COLOR_RED,
+                    strokeDp = 2
+                )
+            }
+
+            record?.hasMissed == true -> {
+                view.setTextColor(COLOR_RED)
+                view.background = roundedDrawable(
+                    color = if (record.partiallyChecked) COLOR_PARTIAL_BG else Color.WHITE,
+                    radiusDp = 10f,
+                    strokeColor = COLOR_RED,
+                    strokeDp = 2
+                )
+            }
+
             record?.checked == true -> {
                 view.setTextColor(Color.WHITE)
                 view.background = roundedDrawable(
@@ -481,6 +591,55 @@ class MainActivity : Activity() {
         }
 
         return view
+    }
+
+    private fun showDayRecordDialog(dateKey: String) {
+        val rows = MedicineRepository.getDoseTimes(this)
+        val items = rows.map { doseTime ->
+            val status = MedicineRepository.getDoseRecordStatus(this, dateKey, doseTime.doseIndex)
+            getString(
+                R.string.record_detail_item,
+                doseTime.doseIndex,
+                doseTime.time,
+                statusLabel(status)
+            )
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.record_detail_title, dateKey))
+            .setItems(items) { _, which ->
+                showDoseRecordActionDialog(dateKey, rows[which].doseIndex)
+            }
+            .show()
+    }
+
+    private fun showDoseRecordActionDialog(dateKey: String, doseIndex: Int) {
+        val status = MedicineRepository.getDoseRecordStatus(this, dateKey, doseIndex)
+        val actions = arrayOf(
+            getString(R.string.record_action_done),
+            getString(R.string.record_action_missed),
+            getString(R.string.record_action_clear)
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.dose_time_label, doseIndex))
+            .setItems(actions) { _, which ->
+                val applyChange = {
+                    when (which) {
+                        0 -> MedicineRepository.markDoseChecked(this, dateKey, doseIndex)
+                        1 -> MedicineRepository.markDoseMissed(this, dateKey, doseIndex)
+                        else -> MedicineRepository.clearDoseRecord(this, dateKey, doseIndex)
+                    }
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
+                if (status == RecordStatus.MISSED && which != 1) {
+                    confirmChangeFromMissed(applyChange)
+                } else {
+                    applyChange()
+                }
+            }
+            .show()
     }
 
     private fun monthCells(month: MonthKey): List<Int?> {
