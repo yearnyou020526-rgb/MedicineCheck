@@ -108,12 +108,18 @@ object MedicineRepository {
         return getTargetFor(context, now)
     }
 
+    fun getCurrentDoseIndex(context: Context): Int {
+        return getCurrentTarget(context).doseIndex
+    }
+
+    fun isCurrentDoseChecked(context: Context): Boolean {
+        return getCurrentTarget(context).checked
+    }
+
     fun getTargetFor(context: Context, calendar: Calendar): DoseTarget {
         migrateLegacyHistory(context)
         val today = dateFormat.format(calendar.time)
-        val nowMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
-        val sortedTimes = getSortedDoseTimes(context)
-        val target = sortedTimes.lastOrNull { nowMinutes >= it.minutesOfDay } ?: sortedTimes.first()
+        val target = getTargetDoseTimeFor(context, calendar)
         return DoseTarget(
             dateKey = today,
             doseIndex = target.doseIndex,
@@ -123,7 +129,7 @@ object MedicineRepository {
     }
 
     fun isTodayChecked(context: Context): Boolean {
-        return getCurrentTarget(context).checked
+        return isCurrentDoseChecked(context)
     }
 
     fun markTodayChecked(context: Context) {
@@ -227,6 +233,14 @@ object MedicineRepository {
         }
 
         return candidates.minOrNull() ?: midnight.timeInMillis
+    }
+
+    private fun getTargetDoseTimeFor(context: Context, calendar: Calendar): DoseTime {
+        val sortedTimes = getSortedDoseTimes(context)
+        if (sortedTimes.size == 1) return sortedTimes.first()
+
+        val nowMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        return sortedTimes.lastOrNull { nowMinutes >= it.minutesOfDay } ?: sortedTimes.first()
     }
 
     private fun migrateLegacyHistory(context: Context) {

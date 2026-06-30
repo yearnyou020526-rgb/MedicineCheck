@@ -14,7 +14,7 @@ class MedicineWidgetProvider : AppWidgetProvider() {
         super.onReceive(context, intent)
         if (intent.action == ACTION_MARK_TODAY) {
             MedicineRepository.markCurrentTargetChecked(context)
-            updateAllWidgets(context)
+            WidgetUpdateHelper.updateAllWidgets(context)
         }
     }
 
@@ -23,11 +23,7 @@ class MedicineWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        appWidgetIds.forEach { appWidgetId ->
-            updateWidget(context, appWidgetManager, appWidgetId)
-        }
-        MedicineCardWidgetProvider.updateAllCardWidgets(context)
-        MidnightUpdateScheduler.scheduleNext(context)
+        WidgetUpdateHelper.updateAllWidgets(context)
     }
 
     override fun onEnabled(context: Context) {
@@ -46,6 +42,10 @@ class MedicineWidgetProvider : AppWidgetProvider() {
         const val EXTRA_DOSE_INDEX = "com.example.medicinecheck.EXTRA_DOSE_INDEX"
 
         fun updateAllWidgets(context: Context) {
+            WidgetUpdateHelper.updateAllWidgets(context)
+        }
+
+        fun updateHomeWidgets(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val widgetIds = manager.getAppWidgetIds(
                 ComponentName(context, MedicineWidgetProvider::class.java)
@@ -53,8 +53,6 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             widgetIds.forEach { widgetId ->
                 updateWidget(context, manager, widgetId)
             }
-            updateCardWidgets(context)
-            MidnightUpdateScheduler.scheduleNext(context)
         }
 
         private fun updateWidget(
@@ -84,10 +82,6 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             )
 
             manager.updateAppWidget(appWidgetId, views)
-        }
-
-        private fun updateCardWidgets(context: Context) {
-            MedicineCardWidgetProvider.updateAllCardWidgets(context)
         }
 
         private fun markTodayIntent(context: Context, appWidgetId: Int): PendingIntent {

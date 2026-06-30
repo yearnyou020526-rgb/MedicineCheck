@@ -2,16 +2,14 @@ package com.example.medicinecheck
 
 import android.app.AlarmManager
 import android.app.PendingIntent
-import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 
 class MidnightUpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        MedicineWidgetProvider.updateAllWidgets(context)
+        WidgetUpdateHelper.updateAllWidgets(context)
     }
 }
 
@@ -21,7 +19,7 @@ object MidnightUpdateScheduler {
     private const val REQUEST_CODE_SCHEDULED_UPDATE = 24_000
 
     fun scheduleNext(context: Context) {
-        if (!hasWidgets(context)) {
+        if (!WidgetUpdateHelper.hasAnyWidgets(context)) {
             cancel(context)
             return
         }
@@ -85,16 +83,5 @@ object MidnightUpdateScheduler {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-    }
-
-    private fun hasWidgets(context: Context): Boolean {
-        val manager = AppWidgetManager.getInstance(context)
-        val widgetIds = manager.getAppWidgetIds(
-            ComponentName(context, MedicineWidgetProvider::class.java)
-        )
-        val cardWidgetIds = manager.getAppWidgetIds(
-            ComponentName(context, MedicineCardWidgetProvider::class.java)
-        )
-        return widgetIds.isNotEmpty() || cardWidgetIds.isNotEmpty()
     }
 }

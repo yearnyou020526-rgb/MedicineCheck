@@ -81,7 +81,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        MidnightUpdateScheduler.scheduleNext(this)
+        WidgetUpdateHelper.updateAllWidgets(this)
         refreshUi()
     }
 
@@ -230,8 +230,7 @@ class MainActivity : Activity() {
     }
 
     private fun syncAndRefresh() {
-        MedicineWidgetProvider.updateAllWidgets(this)
-        MidnightUpdateScheduler.scheduleNext(this)
+        WidgetUpdateHelper.updateAllWidgets(this)
         refreshUi()
     }
 

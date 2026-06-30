@@ -19,7 +19,7 @@ class ConfirmUndoActivity : Activity() {
                 } else {
                     MedicineRepository.clearCurrentTargetChecked(this)
                 }
-                MedicineWidgetProvider.updateAllWidgets(this)
+                WidgetUpdateHelper.updateAllWidgets(this)
                 finish()
             }
             .setNegativeButton(R.string.undo_keep) { _, _ -> finish() }

@@ -15,7 +15,7 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
         super.onReceive(context, intent)
         if (intent.action == MedicineWidgetProvider.ACTION_MARK_TODAY) {
             MedicineRepository.markCurrentTargetChecked(context)
-            MedicineWidgetProvider.updateAllWidgets(context)
+            WidgetUpdateHelper.updateAllWidgets(context)
         }
     }
 
@@ -24,11 +24,7 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        appWidgetIds.forEach { appWidgetId ->
-            updateCardWidget(context, appWidgetManager, appWidgetId)
-        }
-        MedicineWidgetProvider.updateAllWidgets(context)
-        MidnightUpdateScheduler.scheduleNext(context)
+        WidgetUpdateHelper.updateAllWidgets(context)
     }
 
     override fun onEnabled(context: Context) {
@@ -43,6 +39,10 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
 
     companion object {
         fun updateAllCardWidgets(context: Context) {
+            WidgetUpdateHelper.updateAllWidgets(context)
+        }
+
+        fun updateCardWidgets(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             val widgetIds = manager.getAppWidgetIds(
                 ComponentName(context, MedicineCardWidgetProvider::class.java)
@@ -76,7 +76,12 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
                 if (target.checked) context.getString(R.string.status_checked_short)
                 else context.getString(R.string.widget_waiting_short)
             )
-            views.setTextViewText(R.id.card_dose_text, "第${target.doseIndex}次")
+            if (MedicineRepository.getDoseCount(context) == 1) {
+                views.setViewVisibility(R.id.card_dose_text, View.GONE)
+            } else {
+                views.setViewVisibility(R.id.card_dose_text, View.VISIBLE)
+                views.setTextViewText(R.id.card_dose_text, "第${target.doseIndex}次")
+            }
             views.setContentDescription(
                 R.id.card_root,
                 if (target.checked) context.getString(R.string.widget_checked)
