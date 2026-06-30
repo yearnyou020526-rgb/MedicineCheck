@@ -3,4 +3,8 @@
     <color name="widget_red">#D32F2F</color>
     <color name="widget_green">#2E7D32</color>
     <color name="text_primary">#202124</color>
+    <color name="text_secondary">#6B7280</color>
+    <color name="text_tertiary">#A1A7B3</color>
+    <color name="screen_background">#F6F7F9</color>
+    <color name="accent_green">#2E7D32</color>
 </resources>
