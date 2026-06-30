@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.view.View
 import android.widget.RemoteViews
 
 class MedicineWidgetProvider : AppWidgetProvider() {
@@ -62,13 +61,10 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             val checked = MedicineRepository.isTodayChecked(context)
             val views = RemoteViews(context.packageName, R.layout.widget_medicine)
 
-            views.setInt(
-                R.id.widget_root,
-                "setBackgroundResource",
-                if (checked) R.drawable.widget_bg_checked else R.drawable.widget_bg_unchecked
+            views.setImageViewResource(
+                R.id.widget_state_image,
+                if (checked) R.drawable.widget_checked_green else R.drawable.widget_unchecked_red
             )
-            views.setInt(R.id.widget_pill, "setImageAlpha", if (checked) 72 else 255)
-            views.setViewVisibility(R.id.widget_check, if (checked) View.VISIBLE else View.GONE)
             views.setContentDescription(
                 R.id.widget_root,
                 if (checked) context.getString(R.string.widget_checked)
