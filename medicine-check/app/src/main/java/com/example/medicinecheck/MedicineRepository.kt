@@ -24,6 +24,7 @@ object MedicineRepository {
     private const val KEY_MISSED_HISTORY = "missed_history"
     private const val KEY_LEGACY_MIGRATED = "legacy_dose_history_migrated"
     private const val KEY_REMINDERS_ENABLED = "reminders_enabled"
+    private const val KEY_MISSED_REMINDER_DELAY = "missed_reminder_delay"
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val displayDateFormat = SimpleDateFormat("MM-dd", Locale.US)
@@ -69,6 +70,17 @@ object MedicineRepository {
 
     fun setReminderEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_REMINDERS_ENABLED, enabled).apply()
+    }
+
+    fun getMissedReminderDelayMinutes(context: Context): Int {
+        return prefs(context).getInt(KEY_MISSED_REMINDER_DELAY, 0).let { delay ->
+            if (delay in MISSED_REMINDER_DELAYS) delay else 0
+        }
+    }
+
+    fun setMissedReminderDelayMinutes(context: Context, delayMinutes: Int) {
+        val normalized = if (delayMinutes in MISSED_REMINDER_DELAYS) delayMinutes else 0
+        prefs(context).edit().putInt(KEY_MISSED_REMINDER_DELAY, normalized).apply()
     }
 
     fun getMedicineDisplayText(context: Context): String {
@@ -463,6 +475,7 @@ object MedicineRepository {
 
     val DOSE_UNITS = listOf("mg", "g", "ml", "片", "粒")
     val DOSE_PERIODS = listOf("/天", "/次")
+    val MISSED_REMINDER_DELAYS = listOf(0, 30, 60)
 
     private const val DEFAULT_DOSE_UNIT = "mg"
     private const val DEFAULT_DOSE_PERIOD = "/天"

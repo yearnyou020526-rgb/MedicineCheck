@@ -10,7 +10,6 @@ import android.os.Build
 class MidnightUpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         WidgetUpdateHelper.updateAllWidgets(context)
-        MedicineReminderScheduler.scheduleAllIfEnabled(context)
     }
 }
 

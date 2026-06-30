@@ -4,12 +4,16 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.TimePickerDialog
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.AdapterView
 import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -44,7 +48,14 @@ class MainActivity : Activity() {
     private lateinit var statsRecentMissedText: TextView
     private lateinit var statsMonthMissedText: TextView
     private lateinit var reminderSwitch: Switch
+    private lateinit var missedReminderSpinner: Spinner
+    private lateinit var permissionNotificationText: TextView
+    private lateinit var permissionReminderText: TextView
+    private lateinit var permissionAutostartText: TextView
+    private lateinit var permissionBackgroundText: TextView
+    private lateinit var permissionUnusedAppText: TextView
     private var updatingReminderSwitch = false
+    private var updatingMissedReminderSpinner = false
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
@@ -71,10 +82,18 @@ class MainActivity : Activity() {
         statsRecentMissedText = findViewById(R.id.stats_recent_missed_text)
         statsMonthMissedText = findViewById(R.id.stats_month_missed_text)
         reminderSwitch = findViewById(R.id.reminder_switch)
+        missedReminderSpinner = findViewById(R.id.missed_reminder_spinner)
+        permissionNotificationText = findViewById(R.id.permission_notification_text)
+        permissionReminderText = findViewById(R.id.permission_reminder_text)
+        permissionAutostartText = findViewById(R.id.permission_autostart_text)
+        permissionBackgroundText = findViewById(R.id.permission_background_text)
+        permissionUnusedAppText = findViewById(R.id.permission_unused_app_text)
 
         configureDoseCountPicker()
         configureMedicineSpinners()
         configureReminderSwitch()
+        configureMissedReminderSpinner()
+        configurePermissionButtons()
 
         findViewById<Button>(R.id.save_name_button).setOnClickListener {
             MedicineRepository.setMedicineInfo(
@@ -150,6 +169,7 @@ class MainActivity : Activity() {
         } else if (MedicineRepository.isReminderEnabled(this)) {
             Toast.makeText(this, R.string.reminder_permission_needed, Toast.LENGTH_SHORT).show()
         }
+        refreshUi()
     }
 
     private fun configureDoseCountPicker() {
@@ -188,6 +208,47 @@ class MainActivity : Activity() {
             } else {
                 MedicineReminderScheduler.cancelAll(this)
             }
+            refreshUi()
+        }
+    }
+
+    private fun configureMissedReminderSpinner() {
+        missedReminderSpinner.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            listOf(
+                getString(R.string.missed_reminder_off),
+                getString(R.string.missed_reminder_30),
+                getString(R.string.missed_reminder_60)
+            )
+        )
+        missedReminderSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: android.view.View?,
+                position: Int,
+                id: Long
+            ) {
+                if (updatingMissedReminderSpinner) return
+                val delay = when (position) {
+                    1 -> 30
+                    2 -> 60
+                    else -> 0
+                }
+                MedicineRepository.setMissedReminderDelayMinutes(this@MainActivity, delay)
+                refreshReminderSchedule()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+    }
+
+    private fun configurePermissionButtons() {
+        findViewById<Button>(R.id.open_notification_settings_button).setOnClickListener {
+            openNotificationSettings()
+        }
+        findViewById<Button>(R.id.open_app_settings_button).setOnClickListener {
+            openAppSettings()
         }
     }
 
@@ -215,6 +276,15 @@ class MainActivity : Activity() {
         updatingReminderSwitch = true
         reminderSwitch.isChecked = MedicineRepository.isReminderEnabled(this)
         updatingReminderSwitch = false
+        updatingMissedReminderSpinner = true
+        missedReminderSpinner.setSelection(
+            when (MedicineRepository.getMissedReminderDelayMinutes(this)) {
+                30 -> 1
+                60 -> 2
+                else -> 0
+            }
+        )
+        updatingMissedReminderSpinner = false
 
         val summary = MedicineRepository.getTodaySummary(this)
         val target = summary.currentTarget
@@ -243,6 +313,7 @@ class MainActivity : Activity() {
         renderDoseTimes()
         renderCalendar()
         renderStats()
+        renderPermissionStatus()
     }
 
     private fun setSpinnerSelection(spinner: Spinner, value: String) {
@@ -359,6 +430,52 @@ class MainActivity : Activity() {
             return
         }
         MedicineReminderScheduler.scheduleAllIfEnabled(this)
+    }
+
+    private fun renderPermissionStatus() {
+        val enabled = getString(R.string.permission_enabled)
+        val disabled = getString(R.string.permission_disabled)
+        val manualCheck = getString(R.string.permission_manual_check)
+        permissionNotificationText.text = getString(
+            R.string.permission_notification,
+            if (MedicineReminderScheduler.canPostNotifications(this)) enabled else disabled
+        )
+        permissionReminderText.text = getString(
+            R.string.permission_reminder_switch,
+            if (MedicineRepository.isReminderEnabled(this)) enabled else disabled
+        )
+        permissionAutostartText.text = getString(R.string.permission_autostart, manualCheck)
+        permissionBackgroundText.text = getString(R.string.permission_background, manualCheck)
+        permissionUnusedAppText.text = getString(R.string.permission_unused_app, manualCheck)
+    }
+
+    private fun openNotificationSettings() {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            }
+        } else {
+            appSettingsIntent()
+        }
+        startActivitySafely(intent)
+    }
+
+    private fun openAppSettings() {
+        startActivitySafely(appSettingsIntent())
+    }
+
+    private fun appSettingsIntent(): Intent {
+        return Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
+    }
+
+    private fun startActivitySafely(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (_: RuntimeException) {
+            startActivity(appSettingsIntent())
+        }
     }
 
     private fun updateStatusBadge(status: RecordStatus) {

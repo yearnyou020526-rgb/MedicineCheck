@@ -9,6 +9,7 @@ object WidgetUpdateHelper {
         MedicineWidgetProvider.updateHomeWidgets(context)
         MedicineCardWidgetProvider.updateCardWidgets(context)
         MidnightUpdateScheduler.scheduleNext(context)
+        MedicineReminderScheduler.scheduleAllIfEnabled(context)
     }
 
     fun hasAnyWidgets(context: Context): Boolean {

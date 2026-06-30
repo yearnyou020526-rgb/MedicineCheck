@@ -68,6 +68,10 @@
         <receiver
             android:name=".MedicineReminderReceiver"
             android:exported="false" />
+
+        <receiver
+            android:name=".MedicineMissedReminderReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>
