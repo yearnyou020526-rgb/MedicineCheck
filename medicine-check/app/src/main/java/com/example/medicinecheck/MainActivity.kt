@@ -2,6 +2,7 @@ package com.example.medicinecheck
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.TimePickerDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -10,6 +11,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.NumberPicker
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
@@ -20,7 +22,11 @@ class MainActivity : Activity() {
     private lateinit var medicineNameInput: EditText
     private lateinit var medicineDisplayText: TextView
     private lateinit var statusBadge: TextView
+    private lateinit var progressText: TextView
+    private lateinit var currentTargetText: TextView
     private lateinit var toggleButton: Button
+    private lateinit var doseCountPicker: NumberPicker
+    private lateinit var doseTimesContainer: LinearLayout
     private lateinit var calendarContainer: LinearLayout
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -32,21 +38,27 @@ class MainActivity : Activity() {
         medicineNameInput = findViewById(R.id.medicine_name_input)
         medicineDisplayText = findViewById(R.id.medicine_display_text)
         statusBadge = findViewById(R.id.status_badge)
+        progressText = findViewById(R.id.progress_text)
+        currentTargetText = findViewById(R.id.current_target_text)
         toggleButton = findViewById(R.id.toggle_today_button)
+        doseCountPicker = findViewById(R.id.dose_count_picker)
+        doseTimesContainer = findViewById(R.id.dose_times_container)
         calendarContainer = findViewById(R.id.calendar_container)
+
+        configureDoseCountPicker()
 
         findViewById<Button>(R.id.save_name_button).setOnClickListener {
             MedicineRepository.setMedicineName(this, medicineNameInput.text.toString())
-            MedicineWidgetProvider.updateAllWidgets(this)
-            refreshUi()
+            syncAndRefresh()
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
         }
 
         toggleButton.setOnClickListener {
-            if (MedicineRepository.isTodayChecked(this)) {
-                showCancelTodayDialog()
+            val target = MedicineRepository.getCurrentTarget(this)
+            if (target.checked) {
+                showCancelCurrentTargetDialog(target)
             } else {
-                MedicineRepository.markTodayChecked(this)
+                MedicineRepository.markCurrentTargetChecked(this)
                 syncAndRefresh()
             }
         }
@@ -58,6 +70,18 @@ class MainActivity : Activity() {
         refreshUi()
     }
 
+    private fun configureDoseCountPicker() {
+        doseCountPicker.minValue = 1
+        doseCountPicker.maxValue = 3
+        doseCountPicker.displayedValues = arrayOf("1次", "2次", "3次")
+        doseCountPicker.wrapSelectorWheel = false
+        doseCountPicker.value = MedicineRepository.getDoseCount(this)
+        doseCountPicker.setOnValueChangedListener { _, _, newValue ->
+            MedicineRepository.setDoseCount(this, newValue)
+            syncAndRefresh()
+        }
+    }
+
     private fun refreshUi() {
         val medicineName = MedicineRepository.getMedicineName(this)
         if (medicineNameInput.text.toString() != medicineName) {
@@ -67,18 +91,90 @@ class MainActivity : Activity() {
             getString(R.string.medicine_not_set)
         }
 
-        val checked = MedicineRepository.isTodayChecked(this)
-        updateStatusBadge(checked)
-        updateToggleButton(checked)
+        val doseCount = MedicineRepository.getDoseCount(this)
+        if (doseCountPicker.value != doseCount) {
+            doseCountPicker.value = doseCount
+        }
+
+        val target = MedicineRepository.getCurrentTarget(this)
+        val progress = MedicineRepository.getTodayProgress(this)
+        updateStatusBadge(target.checked)
+        updateToggleButton(target.checked)
+        progressText.text = getString(
+            R.string.today_progress_format,
+            progress.completedDoses,
+            progress.totalDoses
+        )
+        currentTargetText.text = getString(
+            R.string.current_target_format,
+            target.doseIndex,
+            target.time,
+            if (target.checked) getString(R.string.status_checked_short)
+            else getString(R.string.status_unchecked_short)
+        )
+
+        renderDoseTimes()
         renderCalendar()
     }
 
-    private fun showCancelTodayDialog() {
+    private fun renderDoseTimes() {
+        doseTimesContainer.removeAllViews()
+        MedicineRepository.getDoseTimes(this).forEachIndexed { index, doseTime ->
+            if (index > 0) addSpacer(doseTimesContainer, 10)
+
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            row.addView(TextView(this).apply {
+                text = getString(R.string.dose_time_label, doseTime.doseIndex)
+                setTextColor(COLOR_TEXT_PRIMARY)
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+
+            row.addView(Button(this).apply {
+                text = doseTime.time
+                textSize = 15f
+                setTextColor(COLOR_GREEN)
+                setAllCaps(false)
+                minHeight = 0
+                background = roundedDrawable(COLOR_SOFT_GREEN, 14f)
+                layoutParams = LinearLayout.LayoutParams(dp(104), dp(42))
+                setOnClickListener {
+                    showTimePicker(doseTime)
+                }
+            })
+
+            doseTimesContainer.addView(row)
+        }
+    }
+
+    private fun showTimePicker(doseTime: DoseTime) {
+        TimePickerDialog(
+            this,
+            { _, hourOfDay, minute ->
+                val time = String.format(Locale.US, "%02d:%02d", hourOfDay, minute)
+                MedicineRepository.setDoseTime(this, doseTime.doseIndex, time)
+                syncAndRefresh()
+            },
+            doseTime.hour,
+            doseTime.minute,
+            true
+        ).show()
+    }
+
+    private fun showCancelCurrentTargetDialog(target: DoseTarget) {
         AlertDialog.Builder(this)
             .setTitle(R.string.undo_title)
             .setMessage(R.string.undo_message)
             .setPositiveButton(R.string.undo_confirm) { _, _ ->
-                MedicineRepository.clearTodayChecked(this)
+                MedicineRepository.clearDoseChecked(this, target.dateKey, target.doseIndex)
                 syncAndRefresh()
             }
             .setNegativeButton(R.string.undo_keep, null)
@@ -87,6 +183,7 @@ class MainActivity : Activity() {
 
     private fun syncAndRefresh() {
         MedicineWidgetProvider.updateAllWidgets(this)
+        MidnightUpdateScheduler.scheduleNext(this)
         refreshUi()
     }
 
@@ -216,6 +313,16 @@ class MainActivity : Activity() {
                 )
             }
 
+            record?.partiallyChecked == true -> {
+                view.setTextColor(COLOR_PARTIAL_TEXT)
+                view.background = roundedDrawable(
+                    color = COLOR_PARTIAL_BG,
+                    radiusDp = 10f,
+                    strokeColor = if (isToday) COLOR_PARTIAL_STROKE else null,
+                    strokeDp = if (isToday) 2 else 0
+                )
+            }
+
             record != null && isToday -> {
                 view.setTextColor(COLOR_TEXT_PRIMARY)
                 view.background = roundedDrawable(
@@ -332,5 +439,9 @@ class MainActivity : Activity() {
         private val COLOR_TEXT_PRIMARY = Color.rgb(32, 33, 36)
         private val COLOR_TEXT_SECONDARY = Color.rgb(107, 114, 128)
         private val COLOR_TEXT_MUTED = Color.rgb(176, 183, 194)
+        private val COLOR_SOFT_GREEN = Color.rgb(241, 248, 242)
+        private val COLOR_PARTIAL_BG = Color.rgb(255, 244, 214)
+        private val COLOR_PARTIAL_TEXT = Color.rgb(145, 95, 0)
+        private val COLOR_PARTIAL_STROKE = Color.rgb(245, 158, 11)
     }
 }

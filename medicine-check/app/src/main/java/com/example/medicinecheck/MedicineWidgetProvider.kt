@@ -13,7 +13,7 @@ class MedicineWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == ACTION_MARK_TODAY) {
-            MedicineRepository.markTodayChecked(context)
+            MedicineRepository.markCurrentTargetChecked(context)
             updateAllWidgets(context)
         }
     }
@@ -41,6 +41,8 @@ class MedicineWidgetProvider : AppWidgetProvider() {
 
     companion object {
         const val ACTION_MARK_TODAY = "com.example.medicinecheck.ACTION_MARK_TODAY"
+        const val EXTRA_DATE_KEY = "com.example.medicinecheck.EXTRA_DATE_KEY"
+        const val EXTRA_DOSE_INDEX = "com.example.medicinecheck.EXTRA_DOSE_INDEX"
 
         fun updateAllWidgets(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -58,21 +60,21 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             manager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val checked = MedicineRepository.isTodayChecked(context)
+            val target = MedicineRepository.getCurrentTarget(context)
             val views = RemoteViews(context.packageName, R.layout.widget_medicine)
 
             views.setImageViewResource(
                 R.id.widget_state_image,
-                if (checked) R.drawable.widget_checked_green else R.drawable.widget_unchecked_red
+                if (target.checked) R.drawable.widget_checked_green else R.drawable.widget_unchecked_red
             )
             views.setContentDescription(
                 R.id.widget_root,
-                if (checked) context.getString(R.string.widget_checked)
+                if (target.checked) context.getString(R.string.widget_checked)
                 else context.getString(R.string.widget_unchecked)
             )
             views.setOnClickPendingIntent(
                 R.id.widget_root,
-                if (checked) undoConfirmIntent(context, appWidgetId) else markTodayIntent(context, appWidgetId)
+                if (target.checked) undoConfirmIntent(context, appWidgetId) else markTodayIntent(context, appWidgetId)
             )
 
             manager.updateAppWidget(appWidgetId, views)
@@ -92,8 +94,11 @@ class MedicineWidgetProvider : AppWidgetProvider() {
         }
 
         private fun undoConfirmIntent(context: Context, appWidgetId: Int): PendingIntent {
+            val target = MedicineRepository.getCurrentTarget(context)
             val intent = Intent(context, ConfirmUndoActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                putExtra(EXTRA_DATE_KEY, target.dateKey)
+                putExtra(EXTRA_DOSE_INDEX, target.doseIndex)
             }
             return PendingIntent.getActivity(
                 context,

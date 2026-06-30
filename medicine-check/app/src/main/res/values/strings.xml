@@ -3,6 +3,7 @@
     <string name="app_name">吃药打卡</string>
     <string name="app_subtitle">今日服药记录</string>
     <string name="today_card_title">今日状态</string>
+    <string name="today_progress_title">今日进度</string>
     <string name="medicine_name">药名设置</string>
     <string name="medicine_name_hint">例如：降压药</string>
     <string name="medicine_not_set">未设置药名</string>
@@ -14,9 +15,14 @@
     <string name="status_unchecked_short">未吃</string>
     <string name="mark_today">标记为已吃</string>
     <string name="cancel_today">取消今日打卡</string>
+    <string name="dose_count_title">每日服药次数</string>
+    <string name="dose_times_title">服药时间</string>
+    <string name="dose_time_label">第 %1$d 次服药时间</string>
+    <string name="today_progress_format">今日进度：%1$d/%2$d</string>
+    <string name="current_target_format">当前：第 %1$d 次，%2$s，%3$s</string>
     <string name="recent_30_days">最近 30 天记录</string>
     <string name="calendar_title">服药日历</string>
-    <string name="calendar_legend">绿色 = 已吃　白色 = 未吃</string>
+    <string name="calendar_legend">绿色 = 全部完成　橙色 = 部分完成　白色 = 未完成</string>
     <string name="history_checked">%1$s：已吃</string>
     <string name="history_unchecked">%1$s：未吃</string>
     <string name="widget_description">吃药打卡 1x1 小组件</string>

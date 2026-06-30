@@ -12,7 +12,13 @@ class ConfirmUndoActivity : Activity() {
             .setTitle(R.string.undo_title)
             .setMessage(R.string.undo_message)
             .setPositiveButton(R.string.undo_confirm) { _, _ ->
-                MedicineRepository.clearTodayChecked(this)
+                val dateKey = intent.getStringExtra(MedicineWidgetProvider.EXTRA_DATE_KEY)
+                val doseIndex = intent.getIntExtra(MedicineWidgetProvider.EXTRA_DOSE_INDEX, -1)
+                if (dateKey != null && doseIndex in 1..3) {
+                    MedicineRepository.clearDoseChecked(this, dateKey, doseIndex)
+                } else {
+                    MedicineRepository.clearCurrentTargetChecked(this)
+                }
                 MedicineWidgetProvider.updateAllWidgets(this)
                 finish()
             }
