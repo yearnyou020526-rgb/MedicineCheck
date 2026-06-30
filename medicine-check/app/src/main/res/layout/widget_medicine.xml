@@ -8,10 +8,10 @@
 
     <ImageView
         android:id="@+id/widget_state_image"
-        android:layout_width="76dp"
-        android:layout_height="76dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_gravity="center"
         android:contentDescription="@string/widget_unchecked"
-        android:scaleType="fitCenter"
+        android:scaleType="centerCrop"
         android:src="@drawable/widget_unchecked_red" />
 </FrameLayout>
