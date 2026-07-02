@@ -11,6 +11,12 @@
     <string name="dose_value_label">剂量</string>
     <string name="dose_unit_label">单位</string>
     <string name="dose_period_label">周期</string>
+    <string name="today_plan_title">今日药单总览</string>
+    <string name="today_plan_slot">第 %1$d 次　%2$s</string>
+    <string name="today_plan_no_medicine">本次未安排药品</string>
+    <string name="today_plan_empty">未安排</string>
+    <string name="today_plan_partial">部分完成</string>
+    <string name="today_plan_not_started">未开始</string>
     <string name="medicine_not_set">未设置药名</string>
     <string name="edit_medicine">编辑</string>
     <string name="pause_medicine">暂停</string>

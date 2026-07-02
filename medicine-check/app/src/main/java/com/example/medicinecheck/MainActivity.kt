@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var doseUnitSpinner: Spinner
     private lateinit var dosePeriodSpinner: Spinner
     private lateinit var medicineListContainer: LinearLayout
+    private lateinit var todayPlanContainer: LinearLayout
     private lateinit var medicineDisplayText: TextView
     private lateinit var statusBadge: TextView
     private lateinit var progressText: TextView
@@ -71,6 +72,7 @@ class MainActivity : Activity() {
         doseUnitSpinner = findViewById(R.id.dose_unit_spinner)
         dosePeriodSpinner = findViewById(R.id.dose_period_spinner)
         medicineListContainer = findViewById(R.id.medicine_list_container)
+        todayPlanContainer = findViewById(R.id.today_plan_container)
         medicineDisplayText = findViewById(R.id.medicine_display_text)
         statusBadge = findViewById(R.id.status_badge)
         progressText = findViewById(R.id.progress_text)
@@ -279,6 +281,7 @@ class MainActivity : Activity() {
     }
 
     private fun refreshUi() {
+        renderTodayPlan()
         renderMedicineCards()
 
         val doseCount = MedicineRepository.getDoseCount(this)
@@ -477,6 +480,96 @@ class MainActivity : Activity() {
     private fun syncAndRefresh() {
         WidgetUpdateHelper.updateAllWidgets(this)
         refreshUi()
+    }
+
+    private fun renderTodayPlan() {
+        todayPlanContainer.removeAllViews()
+        val todayKey = MedicineRepository.getTodayDateKey()
+        val currentTarget = MedicineRepository.getCurrentTarget(this)
+        MedicineRepository.getDoseTimes(this).forEachIndexed { index, doseTime ->
+            if (index > 0) addSpacer(todayPlanContainer, 8)
+            todayPlanContainer.addView(createTodayPlanRow(todayKey, doseTime, currentTarget))
+        }
+    }
+
+    private fun createTodayPlanRow(
+        todayKey: String,
+        doseTime: DoseTime,
+        currentTarget: DoseTarget
+    ): LinearLayout {
+        val tasks = MedicineRepository.getSlotTasks(this, todayKey, doseTime.doseIndex)
+        val label = todayPlanStatusLabel(tasks, doseTime, currentTarget)
+        val labelColor = todayPlanStatusColor(label)
+        val medicineText = if (tasks.isEmpty()) {
+            getString(R.string.today_plan_no_medicine)
+        } else {
+            tasks.joinToString("、") {
+                it.medicine.displayText().ifBlank { getString(R.string.medicine_not_set) }
+            }
+        }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedDrawable(Color.WHITE, 12f, COLOR_BORDER, 1)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+
+            val topRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            topRow.addView(TextView(this@MainActivity).apply {
+                text = getString(R.string.today_plan_slot, doseTime.doseIndex, doseTime.time)
+                setTextColor(COLOR_TEXT_PRIMARY)
+                textSize = 15f
+                typeface = Typeface.DEFAULT_BOLD
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            topRow.addView(TextView(this@MainActivity).apply {
+                text = label
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                minWidth = dp(54)
+                background = roundedDrawable(labelColor, 13f)
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+            })
+            addView(topRow)
+
+            addView(TextView(this@MainActivity).apply {
+                text = medicineText
+                setTextColor(if (tasks.isEmpty()) COLOR_TEXT_MUTED else COLOR_TEXT_SECONDARY)
+                textSize = 13f
+                setPadding(0, dp(6), 0, 0)
+            })
+        }
+    }
+
+    private fun todayPlanStatusLabel(
+        tasks: List<MedicineTask>,
+        doseTime: DoseTime,
+        currentTarget: DoseTarget
+    ): String {
+        if (tasks.isEmpty()) return getString(R.string.today_plan_empty)
+        return when {
+            tasks.all { it.status == RecordStatus.DONE } -> getString(R.string.status_checked_short)
+            tasks.any { it.status == RecordStatus.MISSED } && tasks.none { it.status == RecordStatus.NONE } -> {
+                getString(R.string.status_missed_short)
+            }
+            tasks.any { it.status == RecordStatus.DONE } -> getString(R.string.today_plan_partial)
+            doseTime.doseIndex == currentTarget.doseIndex -> getString(R.string.widget_waiting_short)
+            else -> getString(R.string.today_plan_not_started)
+        }
+    }
+
+    private fun todayPlanStatusColor(label: String): Int {
+        return when (label) {
+            getString(R.string.status_checked_short) -> COLOR_GREEN
+            getString(R.string.status_missed_short) -> COLOR_RED
+            getString(R.string.today_plan_partial) -> COLOR_PARTIAL_STROKE
+            getString(R.string.widget_waiting_short) -> COLOR_RED
+            else -> COLOR_TEXT_MUTED
+        }
     }
 
     private fun renderMedicineCards() {
