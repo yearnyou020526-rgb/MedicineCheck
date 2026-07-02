@@ -6,7 +6,7 @@
     android:background="@drawable/widget_card_bg_unchecked"
     android:clickable="true"
     android:focusable="true"
-    android:padding="12dp">
+    android:padding="8dp">
 
     <TextView
         android:id="@+id/card_dose_text"
@@ -25,17 +25,17 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:orientation="vertical"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp">
+        android:paddingStart="2dp"
+        android:paddingEnd="2dp">
 
         <FrameLayout
-            android:layout_width="92dp"
-            android:layout_height="62dp">
+            android:layout_width="78dp"
+            android:layout_height="52dp">
 
             <ImageView
                 android:id="@+id/card_pill"
-                android:layout_width="92dp"
-                android:layout_height="62dp"
+                android:layout_width="78dp"
+                android:layout_height="52dp"
                 android:layout_gravity="center"
                 android:contentDescription="@string/pill_icon"
                 android:scaleType="fitCenter"
@@ -55,36 +55,36 @@
             android:id="@+id/card_medicine_text"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="6dp"
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="1"
             android:textColor="@android:color/white"
-            android:textSize="16sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/card_medicine_text_2"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="2dp"
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="1"
             android:textColor="@android:color/white"
-            android:textSize="16sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/card_medicine_text_3"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="2dp"
             android:ellipsize="end"
             android:gravity="center"
             android:maxLines="1"
             android:textColor="@android:color/white"
-            android:textSize="16sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
@@ -95,6 +95,7 @@
             android:gravity="center"
             android:textColor="@android:color/white"
             android:textSize="13sp"
-            android:textStyle="bold" />
+            android:textStyle="bold"
+            android:visibility="gone" />
     </LinearLayout>
 </FrameLayout>

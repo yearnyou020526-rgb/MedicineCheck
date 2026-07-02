@@ -252,12 +252,21 @@ object MedicineRepository {
     fun getCurrentDueMedicines(context: Context): List<MedicineTask> {
         migrateMedicineItems(context)
         migrateLegacyHistory(context)
+        return getCurrentStageTasks(context).filter { it.status == RecordStatus.NONE }
+    }
+
+    fun getCurrentStageTasks(context: Context): List<MedicineTask> {
+        migrateMedicineItems(context)
+        migrateLegacyHistory(context)
         val now = Calendar.getInstance()
         val today = dateFormat.format(now.time)
-        return getEnabledMedicines(context).mapNotNull { medicine ->
-            val target = getTargetForMedicine(context, medicine, now, today)
-            target.takeIf { it.isDue && it.status == RecordStatus.NONE }
-        }.sortedWith(compareBy<MedicineTask> { it.minutesOfDay }.thenBy { it.medicine.id })
+        val tasks = getEnabledMedicines(context).map { medicine ->
+            getTargetForMedicine(context, medicine, now, today)
+        }.filter { it.isDue }
+        val currentStageMinute = tasks.maxOfOrNull { it.minutesOfDay } ?: return emptyList()
+        return tasks
+            .filter { it.minutesOfDay == currentStageMinute }
+            .sortedWith(compareBy<MedicineTask> { it.minutesOfDay }.thenBy { it.medicine.id })
     }
 
     fun hasCurrentDueMedicines(context: Context): Boolean {
@@ -265,12 +274,14 @@ object MedicineRepository {
     }
 
     fun markCurrentDueMedicinesChecked(context: Context) {
+        autoMarkMissedDoses(context)
         getCurrentDueMedicines(context).forEach { task ->
             markDoseChecked(context, task.dateKey, task.medicine.id, task.doseIndex)
         }
     }
 
     fun markCurrentDueMedicinesMissed(context: Context) {
+        autoMarkMissedDoses(context)
         getCurrentDueMedicines(context).forEach { task ->
             markDoseMissed(context, task.dateKey, task.medicine.id, task.doseIndex)
         }
@@ -294,15 +305,15 @@ object MedicineRepository {
         migrateMedicineItems(context)
         migrateLegacyHistory(context)
         val today = dateFormat.format(calendar.time)
-        val due = getEnabledMedicines(context).mapNotNull { medicine ->
-            val task = getTargetForMedicine(context, medicine, calendar, today)
-            task.takeIf { it.isDue && it.status == RecordStatus.NONE }
-        }.sortedWith(compareBy<MedicineTask> { it.minutesOfDay }.thenBy { it.medicine.id })
-
-        val task = due.firstOrNull()
-            ?: getEnabledMedicines(context).firstOrNull()?.let {
-                getTargetForMedicine(context, it, calendar, today)
-            }
+        val tasks = getEnabledMedicines(context).map { medicine ->
+            getTargetForMedicine(context, medicine, calendar, today)
+        }.filter { it.isDue }
+        val currentStageMinute = tasks.maxOfOrNull { it.minutesOfDay }
+        val stageTasks = tasks
+            .filter { currentStageMinute != null && it.minutesOfDay == currentStageMinute }
+            .sortedWith(compareBy<MedicineTask> { it.status == RecordStatus.DONE }.thenBy { it.medicine.id })
+        val due = stageTasks.filter { it.status == RecordStatus.NONE }
+        val task = due.firstOrNull() ?: stageTasks.firstOrNull()
 
         return if (task == null) {
             DoseTarget(today, DEFAULT_MEDICINE_ID, 1, "08:00", RecordStatus.DONE, checked = true)

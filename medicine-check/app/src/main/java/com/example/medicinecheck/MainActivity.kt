@@ -460,6 +460,8 @@ class MainActivity : Activity() {
         } else {
             getString(R.string.medicine_card_status, doneCount, medicine.doseCount, missedCount)
         }
+        val currentTask = MedicineRepository.getCurrentStageTasks(this)
+            .firstOrNull { it.medicine.id == medicine.id }
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -493,6 +495,19 @@ class MainActivity : Activity() {
                 textSize = 13f
                 setPadding(0, dp(4), 0, 0)
             })
+            if (currentTask != null) {
+                addView(TextView(this@MainActivity).apply {
+                    text = getString(
+                        R.string.current_medicine_status,
+                        currentTask.doseIndex,
+                        currentTask.time,
+                        statusLabel(currentTask.status)
+                    )
+                    setTextColor(COLOR_TEXT_SECONDARY)
+                    textSize = 13f
+                    setPadding(0, dp(4), 0, 0)
+                })
+            }
 
             val actions = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -514,6 +529,23 @@ class MainActivity : Activity() {
                 confirmDeleteMedicine(medicine)
             })
             addView(actions)
+
+            val doneTask = currentTask?.takeIf { it.status == RecordStatus.DONE }
+            if (doneTask != null) {
+                addView(Button(this@MainActivity).apply {
+                    text = getString(R.string.undo_current_dose)
+                    textSize = 14f
+                    setTextColor(COLOR_RED)
+                    setAllCaps(false)
+                    minHeight = 0
+                    background = roundedDrawable(COLOR_CANCEL_BUTTON, 14f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(42)
+                    ).apply { setMargins(0, dp(10), 0, 0) }
+                    setOnClickListener { showCancelDoseDialog(doneTask) }
+                })
+            }
         }
     }
 
@@ -559,7 +591,8 @@ class MainActivity : Activity() {
             value = medicine.doseCount
         }
         val times = medicine.doseTimes.toMutableList().apply {
-            while (size < 3) add("08:00")
+            val defaults = defaultEditorTimes(medicine.doseCount)
+            while (size < 3) add(defaults[size])
         }
         val timeContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -609,14 +642,12 @@ class MainActivity : Activity() {
             }
         }
 
-        doseCountPicker.setOnValueChangedListener { _, _, newValue ->
-            val defaults = when (newValue) {
-                1 -> listOf("08:00", "20:00", "20:00")
-                2 -> listOf("08:00", "20:00", "20:00")
-                else -> listOf("08:00", "14:00", "20:00")
-            }
+        doseCountPicker.setOnValueChangedListener { _, oldValue, newValue ->
+            val defaults = defaultEditorTimes(newValue)
             for (index in 0..2) {
-                if (times.getOrNull(index).isNullOrBlank()) times[index] = defaults[index]
+                if (index >= oldValue || times[index].isBlank()) {
+                    times[index] = defaults[index]
+                }
             }
             renderEditorTimes()
         }
@@ -656,6 +687,32 @@ class MainActivity : Activity() {
                 refreshReminderSchedule()
             }
             .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun defaultEditorTimes(count: Int): List<String> {
+        return when (count.coerceIn(1, 3)) {
+            1 -> listOf("08:00", "20:00", "20:00")
+            2 -> listOf("08:00", "20:00", "20:00")
+            else -> listOf("08:00", "14:00", "20:00")
+        }
+    }
+
+    private fun showCancelDoseDialog(task: MedicineTask) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.undo_dose_title)
+            .setMessage(R.string.undo_dose_message)
+            .setPositiveButton(R.string.undo_dose_confirm) { _, _ ->
+                MedicineRepository.clearDoseRecord(
+                    this,
+                    task.dateKey,
+                    task.medicine.id,
+                    task.doseIndex
+                )
+                syncAndRefresh()
+                refreshReminderSchedule()
+            }
+            .setNegativeButton(R.string.undo_dose_keep, null)
             .show()
     }
 

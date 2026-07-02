@@ -73,11 +73,8 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             setMedicineLine(views, R.id.card_medicine_text, medicineLines.getOrNull(0), hasDue)
             setMedicineLine(views, R.id.card_medicine_text_2, medicineLines.getOrNull(1), hasDue)
             setMedicineLine(views, R.id.card_medicine_text_3, medicineLines.getOrNull(2), hasDue)
-            views.setTextViewText(
-                R.id.card_status_text,
-                if (hasDue) context.getString(R.string.widget_waiting_short)
-                else context.getString(R.string.status_checked_short)
-            )
+            views.setViewVisibility(R.id.card_status_text, View.GONE)
+            views.setTextViewText(R.id.card_status_text, "")
             views.setViewVisibility(R.id.card_dose_text, View.GONE)
             views.setContentDescription(
                 R.id.card_root,
