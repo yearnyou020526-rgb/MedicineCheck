@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 
@@ -64,6 +65,8 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             val medicineLines = stageTasks
                 .map { it.medicine.displayText().ifBlank { context.getString(R.string.medicine_not_set) } }
                 .take(MedicineRepository.MAX_MEDICINES)
+            val displayLines = adaptiveMedicineLines(medicineLines)
+            val medicineCount = medicineLines.size.coerceIn(1, MedicineRepository.MAX_MEDICINES)
 
             views.setInt(
                 R.id.card_root,
@@ -71,26 +74,15 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
                 if (hasDue) R.drawable.widget_card_bg_unchecked
                 else R.drawable.widget_card_bg_checked
             )
-            views.setInt(R.id.card_pill, "setImageAlpha", if (hasDue) 255 else 86)
-            views.setViewVisibility(R.id.card_check, if (hasDue) View.GONE else View.VISIBLE)
-            if (hasDue) {
-                setMedicineLine(views, R.id.card_medicine_text, medicineLines.getOrNull(0))
-                setMedicineLine(views, R.id.card_medicine_text_2, medicineLines.getOrNull(1))
-                setMedicineLine(views, R.id.card_medicine_text_3, medicineLines.getOrNull(2))
-            } else {
-                setMedicineLine(views, R.id.card_medicine_text, null)
-                setMedicineLine(views, R.id.card_medicine_text_2, null)
-                setMedicineLine(views, R.id.card_medicine_text_3, null)
-            }
+            configureArtwork(views, medicineCount, hasDue)
+            configureTextSizes(views, medicineLines.size)
+            setMedicineLine(views, R.id.card_medicine_text, displayLines.getOrNull(0))
+            setMedicineLine(views, R.id.card_medicine_text_2, displayLines.getOrNull(1))
+            setMedicineLine(views, R.id.card_medicine_text_3, displayLines.getOrNull(2))
             views.setViewVisibility(R.id.card_status_text, View.GONE)
             views.setTextViewText(R.id.card_status_text, "")
-            val target = MedicineRepository.getCurrentTarget(context)
-            if (!hasDue || MedicineRepository.getDoseCount(context) == 1) {
-                views.setViewVisibility(R.id.card_dose_text, View.GONE)
-            } else {
-                views.setViewVisibility(R.id.card_dose_text, View.VISIBLE)
-                views.setTextViewText(R.id.card_dose_text, "第${target.doseIndex}次")
-            }
+            views.setViewVisibility(R.id.card_dose_text, View.GONE)
+            views.setTextViewText(R.id.card_dose_text, "")
             views.setContentDescription(
                 R.id.card_root,
                 if (!hasDue) context.getString(R.string.widget_checked)
@@ -113,6 +105,71 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(viewId, View.VISIBLE)
                 views.setTextViewText(viewId, text)
             }
+        }
+
+        private fun adaptiveMedicineLines(lines: List<String>): List<String> {
+            if (lines.size != 1) return lines
+            val single = lines.firstOrNull()?.trim().orEmpty()
+            if (single.isBlank()) return emptyList()
+            val splitIndex = single.indexOf(' ')
+            if (splitIndex <= 0 || splitIndex >= single.lastIndex) return listOf(single)
+            return listOf(single.substring(0, splitIndex), single.substring(splitIndex + 1))
+        }
+
+        private fun configureArtwork(
+            views: RemoteViews,
+            medicineCount: Int,
+            hasDue: Boolean
+        ) {
+            val large = medicineCount <= 1
+            val medium = medicineCount == 2
+            val small = medicineCount >= 3
+            views.setViewVisibility(R.id.card_art_large, if (large) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.card_art_medium, if (medium) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.card_art_small, if (small) View.VISIBLE else View.GONE)
+
+            val alpha = if (hasDue) 255 else 86
+            views.setInt(R.id.card_pill_large, "setImageAlpha", alpha)
+            views.setInt(R.id.card_pill_medium, "setImageAlpha", alpha)
+            views.setInt(R.id.card_pill_small, "setImageAlpha", alpha)
+            views.setViewVisibility(
+                R.id.card_check_large,
+                if (!hasDue && large) View.VISIBLE else View.GONE
+            )
+            views.setViewVisibility(
+                R.id.card_check_medium,
+                if (!hasDue && medium) View.VISIBLE else View.GONE
+            )
+            views.setViewVisibility(
+                R.id.card_check_small,
+                if (!hasDue && small) View.VISIBLE else View.GONE
+            )
+        }
+
+        private fun configureTextSizes(views: RemoteViews, medicineCount: Int) {
+            val firstSize: Float
+            val otherSize: Float
+            when (medicineCount) {
+                0 -> {
+                    firstSize = 13f
+                    otherSize = 13f
+                }
+                1 -> {
+                    firstSize = 16f
+                    otherSize = 14f
+                }
+                2 -> {
+                    firstSize = 14f
+                    otherSize = 14f
+                }
+                else -> {
+                    firstSize = 12.5f
+                    otherSize = 12.5f
+                }
+            }
+            views.setTextViewTextSize(R.id.card_medicine_text, TypedValue.COMPLEX_UNIT_SP, firstSize)
+            views.setTextViewTextSize(R.id.card_medicine_text_2, TypedValue.COMPLEX_UNIT_SP, otherSize)
+            views.setTextViewTextSize(R.id.card_medicine_text_3, TypedValue.COMPLEX_UNIT_SP, otherSize)
         }
 
         private fun markCurrentTargetIntent(context: Context, appWidgetId: Int): PendingIntent {
