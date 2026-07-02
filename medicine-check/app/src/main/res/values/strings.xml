@@ -22,6 +22,7 @@
     <string name="medicine_paused">已暂停</string>
     <string name="medicine_card_status">今日：已吃 %1$d/%2$d，漏吃 %3$d</string>
     <string name="medicine_card_times">每天 %1$d 次：%2$s</string>
+    <string name="medicine_time_button">第 %1$d 次：%2$s</string>
     <string name="current_medicine_status">当前：第 %1$d 次，%2$s，%3$s</string>
     <string name="undo_current_dose">取消本次打卡</string>
     <string name="undo_dose_title">取消打卡</string>

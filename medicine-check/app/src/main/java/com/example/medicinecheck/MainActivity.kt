@@ -489,6 +489,7 @@ class MainActivity : Activity() {
                 textSize = 13f
                 setPadding(0, dp(6), 0, 0)
             })
+            addView(createMedicineTimeButtons(medicine))
             addView(TextView(this@MainActivity).apply {
                 text = statusText
                 setTextColor(if (medicine.enabled) COLOR_TEXT_SECONDARY else COLOR_RED)
@@ -547,6 +548,49 @@ class MainActivity : Activity() {
                 })
             }
         }
+    }
+
+    private fun createMedicineTimeButtons(medicine: MedicineItem): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(2))
+            MedicineRepository.getDoseTimes(medicine).forEach { doseTime ->
+                addView(Button(this@MainActivity).apply {
+                    text = getString(R.string.medicine_time_button, doseTime.doseIndex, doseTime.time)
+                    textSize = 14f
+                    setTextColor(COLOR_GREEN)
+                    setAllCaps(false)
+                    minHeight = 0
+                    background = roundedDrawable(COLOR_SOFT_GREEN, 12f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dp(38)
+                    ).apply { setMargins(0, dp(4), 0, 0) }
+                    setOnClickListener {
+                        showMedicineTimePicker(medicine, doseTime)
+                    }
+                })
+            }
+        }
+    }
+
+    private fun showMedicineTimePicker(medicine: MedicineItem, doseTime: DoseTime) {
+        TimePickerDialog(
+            this,
+            { _, hourOfDay, minute ->
+                val newTime = String.format(Locale.US, "%02d:%02d", hourOfDay, minute)
+                val times = medicine.doseTimes.toMutableList().apply {
+                    val defaults = defaultEditorTimes(medicine.doseCount)
+                    while (size < 3) add(defaults[size])
+                }
+                times[doseTime.doseIndex - 1] = newTime
+                MedicineRepository.saveMedicine(this, medicine.copy(doseTimes = times))
+                syncAndRefresh()
+            },
+            doseTime.hour,
+            doseTime.minute,
+            true
+        ).show()
     }
 
     private fun cardActionButton(

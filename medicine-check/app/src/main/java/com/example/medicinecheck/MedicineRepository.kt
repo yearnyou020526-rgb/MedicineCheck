@@ -170,12 +170,13 @@ object MedicineRepository {
     }
 
     fun getWidgetMedicineLines(context: Context): List<String> {
-        val due = getCurrentDueMedicines(context)
-        return if (due.isNotEmpty()) {
-            due.take(MAX_MEDICINES).map { it.medicine.displayText().ifBlank { "药品" } }
+        val stageTasks = getCurrentStageTasks(context)
+        val source = if (stageTasks.isNotEmpty()) {
+            stageTasks.map { it.medicine }
         } else {
-            emptyList()
+            getEnabledMedicines(context)
         }
+        return source.take(MAX_MEDICINES).map { it.displayText().ifBlank { "药品" } }
     }
 
     fun getDoseCount(context: Context): Int {

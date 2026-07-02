@@ -70,9 +70,9 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             )
             views.setInt(R.id.card_pill, "setImageAlpha", if (hasDue) 255 else 86)
             views.setViewVisibility(R.id.card_check, if (hasDue) View.GONE else View.VISIBLE)
-            setMedicineLine(views, R.id.card_medicine_text, medicineLines.getOrNull(0), hasDue)
-            setMedicineLine(views, R.id.card_medicine_text_2, medicineLines.getOrNull(1), hasDue)
-            setMedicineLine(views, R.id.card_medicine_text_3, medicineLines.getOrNull(2), hasDue)
+            setMedicineLine(views, R.id.card_medicine_text, medicineLines.getOrNull(0))
+            setMedicineLine(views, R.id.card_medicine_text_2, medicineLines.getOrNull(1))
+            setMedicineLine(views, R.id.card_medicine_text_3, medicineLines.getOrNull(2))
             views.setViewVisibility(R.id.card_status_text, View.GONE)
             views.setTextViewText(R.id.card_status_text, "")
             views.setViewVisibility(R.id.card_dose_text, View.GONE)
@@ -93,10 +93,9 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
         private fun setMedicineLine(
             views: RemoteViews,
             viewId: Int,
-            text: String?,
-            hasDue: Boolean
+            text: String?
         ) {
-            if (hasDue && !text.isNullOrBlank()) {
+            if (!text.isNullOrBlank()) {
                 views.setViewVisibility(viewId, View.VISIBLE)
                 views.setTextViewText(viewId, text)
             } else {
