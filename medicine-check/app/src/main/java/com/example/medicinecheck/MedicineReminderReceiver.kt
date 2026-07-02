@@ -16,18 +16,14 @@ import java.util.Calendar
 class MedicineReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         MedicineRepository.autoMarkMissedDoses(context)
-        val doseIndex = intent.getIntExtra(EXTRA_DOSE_INDEX, 1).coerceIn(1, 3)
-        val status = MedicineRepository.getDoseRecordStatus(
-            context,
-            MedicineRepository.getTodayDateKey(),
-            doseIndex
-        )
+        val dueTasks = MedicineRepository.getCurrentReminderTasks(context)
         if (MedicineRepository.isReminderEnabled(context) &&
             MedicineReminderScheduler.canPostNotifications(context) &&
-            status == RecordStatus.NONE
+            dueTasks.isNotEmpty()
         ) {
-            MedicineReminderScheduler.showReminder(context, doseIndex)
+            MedicineReminderScheduler.showReminder(context, dueTasks)
         }
+        WidgetUpdateHelper.updateAllWidgets(context)
         MedicineReminderScheduler.scheduleAllIfEnabled(context)
     }
 
@@ -40,20 +36,14 @@ class MedicineReminderReceiver : BroadcastReceiver() {
 class MedicineMissedReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         MedicineRepository.autoMarkMissedDoses(context)
-        val doseIndex = intent.getIntExtra(MedicineReminderReceiver.EXTRA_DOSE_INDEX, 1)
-            .coerceIn(1, 3)
-        val status = MedicineRepository.getDoseRecordStatus(
-            context,
-            MedicineRepository.getTodayDateKey(),
-            doseIndex
-        )
+        val dueTasks = MedicineRepository.getCurrentReminderTasks(context)
 
         if (MedicineRepository.isReminderEnabled(context) &&
             MedicineRepository.getMissedReminderDelayMinutes(context) > 0 &&
             MedicineReminderScheduler.canPostNotifications(context) &&
-            status == RecordStatus.NONE
+            dueTasks.isNotEmpty()
         ) {
-            MedicineReminderScheduler.showMissedReminder(context, doseIndex)
+            MedicineReminderScheduler.showMissedReminder(context, dueTasks)
         }
         MedicineReminderScheduler.scheduleAllIfEnabled(context)
     }
@@ -76,9 +66,9 @@ object MedicineReminderScheduler {
         createNotificationChannel(context)
         cancelAll(context)
         val alarmManager = context.getSystemService(AlarmManager::class.java)
-        MedicineRepository.getDoseTimes(context).forEach { doseTime ->
+        MedicineRepository.getReminderTimes(context).forEach { doseTime ->
             val triggerAtMillis = nextTriggerMillis(doseTime)
-            val pendingIntent = reminderPendingIntent(context, doseTime.doseIndex)
+            val pendingIntent = reminderPendingIntent(context, doseTime.minutesOfDay)
             try {
                 scheduleAlarmClock(alarmManager, triggerAtMillis, pendingIntent, context)
             } catch (_: SecurityException) {
@@ -92,9 +82,9 @@ object MedicineReminderScheduler {
 
     fun cancelAll(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
-        for (doseIndex in 1..3) {
-            alarmManager.cancel(reminderPendingIntent(context, doseIndex))
-            alarmManager.cancel(missedReminderPendingIntent(context, doseIndex))
+        for (minutesOfDay in 0 until 24 * 60) {
+            alarmManager.cancel(reminderPendingIntent(context, minutesOfDay))
+            alarmManager.cancel(missedReminderPendingIntent(context, minutesOfDay))
         }
     }
 
@@ -104,16 +94,16 @@ object MedicineReminderScheduler {
             PackageManager.PERMISSION_GRANTED
     }
 
-    fun showReminder(context: Context, doseIndex: Int) {
+    fun showReminder(context: Context, tasks: List<MedicineTask>) {
         createNotificationChannel(context)
-        val medicineText = MedicineRepository.getMedicineDisplayText(context)
-            .ifBlank { context.getString(R.string.medicine_not_set) }
-        val suffix = if (MedicineRepository.getDoseCount(context) == 1) {
-            ""
-        } else {
-            " 第${doseIndex}次"
+        val lines = tasks.take(MedicineRepository.MAX_MEDICINES).joinToString("\n") {
+            it.medicine.displayText().ifBlank { context.getString(R.string.medicine_not_set) }
         }
-        val content = context.getString(R.string.reminder_notification_content, medicineText, suffix)
+        val content = if (tasks.size == 1) {
+            context.getString(R.string.reminder_notification_content, lines, "")
+        } else {
+            "该吃药了：\n$lines"
+        }
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_check)
             .setContentTitle(context.getString(R.string.reminder_notification_title))
@@ -124,23 +114,19 @@ object MedicineReminderScheduler {
             .build()
 
         context.getSystemService(NotificationManager::class.java)
-            .notify(REQUEST_CODE_BASE + doseIndex, notification)
+            .notify(REQUEST_CODE_BASE, notification)
     }
 
-    fun showMissedReminder(context: Context, doseIndex: Int) {
+    fun showMissedReminder(context: Context, tasks: List<MedicineTask>) {
         createNotificationChannel(context)
-        val medicineText = MedicineRepository.getMedicineDisplayText(context)
-            .ifBlank { context.getString(R.string.medicine_not_set) }
-        val suffix = if (MedicineRepository.getDoseCount(context) == 1) {
-            ""
-        } else {
-            "，第${doseIndex}次"
+        val lines = tasks.take(MedicineRepository.MAX_MEDICINES).joinToString("\n") {
+            it.medicine.displayText().ifBlank { context.getString(R.string.medicine_not_set) }
         }
-        val content = context.getString(
-            R.string.missed_reminder_notification_content,
-            medicineText,
-            suffix
-        )
+        val content = if (tasks.size == 1) {
+            context.getString(R.string.missed_reminder_notification_content, lines, "")
+        } else {
+            "还没打卡：\n$lines"
+        }
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_check)
             .setContentTitle(context.getString(R.string.reminder_notification_title))
@@ -151,7 +137,7 @@ object MedicineReminderScheduler {
             .build()
 
         context.getSystemService(NotificationManager::class.java)
-            .notify(MISSED_REQUEST_CODE_BASE + doseIndex, notification)
+            .notify(MISSED_REQUEST_CODE_BASE, notification)
     }
 
     private fun scheduleMissedRemindersForPendingToday(context: Context) {
@@ -159,15 +145,8 @@ object MedicineReminderScheduler {
         if (delayMinutes <= 0) return
 
         val now = Calendar.getInstance()
-        val todayKey = MedicineRepository.getTodayDateKey()
         val alarmManager = context.getSystemService(AlarmManager::class.java)
-        MedicineRepository.getDoseTimes(context).forEach { doseTime ->
-            if (MedicineRepository.getDoseRecordStatus(context, todayKey, doseTime.doseIndex) !=
-                RecordStatus.NONE
-            ) {
-                return@forEach
-            }
-
+        MedicineRepository.getReminderTimes(context).forEach { doseTime ->
             val triggerAtMillis = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, doseTime.hour)
                 set(Calendar.MINUTE, doseTime.minute)
@@ -180,7 +159,7 @@ object MedicineReminderScheduler {
             scheduleInexact(
                 alarmManager,
                 triggerAtMillis,
-                missedReminderPendingIntent(context, doseTime.doseIndex)
+                missedReminderPendingIntent(context, doseTime.minutesOfDay)
             )
         }
     }
@@ -264,27 +243,27 @@ object MedicineReminderScheduler {
         }.timeInMillis
     }
 
-    private fun reminderPendingIntent(context: Context, doseIndex: Int): PendingIntent {
+    private fun reminderPendingIntent(context: Context, minutesOfDay: Int): PendingIntent {
         val intent = Intent(context, MedicineReminderReceiver::class.java).apply {
             action = MedicineReminderReceiver.ACTION_REMINDER
-            putExtra(MedicineReminderReceiver.EXTRA_DOSE_INDEX, doseIndex)
+            putExtra(MedicineReminderReceiver.EXTRA_DOSE_INDEX, minutesOfDay)
         }
         return PendingIntent.getBroadcast(
             context,
-            REQUEST_CODE_BASE + doseIndex,
+            REQUEST_CODE_BASE + minutesOfDay,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
-    private fun missedReminderPendingIntent(context: Context, doseIndex: Int): PendingIntent {
+    private fun missedReminderPendingIntent(context: Context, minutesOfDay: Int): PendingIntent {
         val intent = Intent(context, MedicineMissedReminderReceiver::class.java).apply {
             action = "com.example.medicinecheck.ACTION_MISSED_REMINDER"
-            putExtra(MedicineReminderReceiver.EXTRA_DOSE_INDEX, doseIndex)
+            putExtra(MedicineReminderReceiver.EXTRA_DOSE_INDEX, minutesOfDay)
         }
         return PendingIntent.getBroadcast(
             context,
-            MISSED_REQUEST_CODE_BASE + doseIndex,
+            MISSED_REQUEST_CODE_BASE + minutesOfDay,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

@@ -23,6 +23,8 @@ object MedicineRepository {
     private const val KEY_DOSE_HISTORY = "dose_history"
     private const val KEY_MISSED_HISTORY = "missed_history"
     private const val KEY_LEGACY_MIGRATED = "legacy_dose_history_migrated"
+    private const val KEY_MEDICINES_MIGRATED = "medicine_items_migrated"
+    private const val KEY_MEDICINE_IDS = "medicine_ids"
     private const val KEY_REMINDERS_ENABLED = "reminders_enabled"
     private const val KEY_MISSED_REMINDER_DELAY = "missed_reminder_delay"
     private const val KEY_AUTO_MISS_LAST_CHECK_DATE = "auto_miss_last_check_date"
@@ -30,24 +32,94 @@ object MedicineRepository {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     private val displayDateFormat = SimpleDateFormat("MM-dd", Locale.US)
 
+    fun getMedicines(context: Context): List<MedicineItem> {
+        migrateMedicineItems(context)
+        val ids = getMedicineIds(context)
+        return ids.map { id -> loadMedicine(context, id) }
+    }
+
+    fun getEnabledMedicines(context: Context): List<MedicineItem> {
+        return getMedicines(context).filter { it.enabled }
+    }
+
+    fun saveMedicine(context: Context, item: MedicineItem) {
+        migrateMedicineItems(context)
+        val normalized = item.normalized()
+        val ids = getMedicineIds(context).toMutableList()
+        if (!ids.contains(normalized.id)) {
+            if (ids.size >= MAX_MEDICINES) return
+            ids.add(normalized.id)
+        }
+
+        prefs(context).edit()
+            .putString(KEY_MEDICINE_IDS, ids.joinToString(","))
+            .putString(medicineKey(normalized.id, "name"), normalized.name)
+            .putString(medicineKey(normalized.id, "dose_value"), normalized.doseValue)
+            .putString(medicineKey(normalized.id, "dose_unit"), normalizeDoseUnit(normalized.doseUnit))
+            .putString(
+                medicineKey(normalized.id, "dose_period"),
+                normalizeDosePeriod(normalized.dosePeriod)
+            )
+            .putInt(medicineKey(normalized.id, "dose_count"), normalized.doseCount.coerceIn(1, 3))
+            .putString(medicineKey(normalized.id, "dose_time_1"), normalized.timeFor(1))
+            .putString(medicineKey(normalized.id, "dose_time_2"), normalized.timeFor(2))
+            .putString(medicineKey(normalized.id, "dose_time_3"), normalized.timeFor(3))
+            .putBoolean(medicineKey(normalized.id, "enabled"), normalized.enabled)
+            .apply()
+
+        if (normalized.id == DEFAULT_MEDICINE_ID) {
+            setLegacyMedicineMirror(context, normalized)
+        }
+    }
+
+    fun addDefaultMedicine(context: Context): MedicineItem? {
+        migrateMedicineItems(context)
+        val ids = getMedicineIds(context).toMutableList()
+        if (ids.size >= MAX_MEDICINES) return null
+        val id = (1..MAX_MEDICINES).map { "med$it" }.firstOrNull { !ids.contains(it) } ?: return null
+        val item = MedicineItem(
+            id = id,
+            name = "",
+            doseValue = "",
+            doseUnit = DEFAULT_DOSE_UNIT,
+            dosePeriod = DEFAULT_DOSE_PERIOD,
+            doseCount = 1,
+            doseTimes = defaultDoseTimes(1),
+            enabled = true
+        )
+        saveMedicine(context, item)
+        return item
+    }
+
+    fun deleteMedicine(context: Context, medicineId: String) {
+        migrateMedicineItems(context)
+        val ids = getMedicineIds(context).filterNot { it == medicineId }
+        if (ids.isEmpty()) {
+            saveMedicine(context, loadMedicine(context, medicineId).copy(enabled = false))
+            return
+        }
+        prefs(context).edit().putString(KEY_MEDICINE_IDS, ids.joinToString(",")).apply()
+    }
+
     fun getMedicineName(context: Context): String {
-        return prefs(context).getString(KEY_MEDICINE_NAME, "") ?: ""
+        return getMedicines(context).firstOrNull()?.name ?: ""
     }
 
     fun setMedicineName(context: Context, name: String) {
-        prefs(context).edit().putString(KEY_MEDICINE_NAME, name.trim()).apply()
+        val first = getMedicines(context).firstOrNull() ?: defaultMedicine(context)
+        saveMedicine(context, first.copy(name = name.trim()))
     }
 
     fun getDoseValue(context: Context): String {
-        return prefs(context).getString(KEY_DOSE_VALUE, "") ?: ""
+        return getMedicines(context).firstOrNull()?.doseValue ?: ""
     }
 
     fun getDoseUnit(context: Context): String {
-        return prefs(context).getString(KEY_DOSE_UNIT, DEFAULT_DOSE_UNIT) ?: DEFAULT_DOSE_UNIT
+        return getMedicines(context).firstOrNull()?.doseUnit ?: DEFAULT_DOSE_UNIT
     }
 
     fun getDosePeriod(context: Context): String {
-        return prefs(context).getString(KEY_DOSE_PERIOD, DEFAULT_DOSE_PERIOD) ?: DEFAULT_DOSE_PERIOD
+        return getMedicines(context).firstOrNull()?.dosePeriod ?: DEFAULT_DOSE_PERIOD
     }
 
     fun setMedicineInfo(
@@ -57,12 +129,16 @@ object MedicineRepository {
         doseUnit: String,
         dosePeriod: String
     ) {
-        prefs(context).edit()
-            .putString(KEY_MEDICINE_NAME, medicineName.trim())
-            .putString(KEY_DOSE_VALUE, doseValue.trim())
-            .putString(KEY_DOSE_UNIT, normalizeDoseUnit(doseUnit))
-            .putString(KEY_DOSE_PERIOD, normalizeDosePeriod(dosePeriod))
-            .apply()
+        val first = getMedicines(context).firstOrNull() ?: defaultMedicine(context)
+        saveMedicine(
+            context,
+            first.copy(
+                name = medicineName.trim(),
+                doseValue = doseValue.trim(),
+                doseUnit = normalizeDoseUnit(doseUnit),
+                dosePeriod = normalizeDosePeriod(dosePeriod)
+            )
+        )
     }
 
     fun isReminderEnabled(context: Context): Boolean {
@@ -85,33 +161,48 @@ object MedicineRepository {
     }
 
     fun getMedicineDisplayText(context: Context): String {
-        val name = getMedicineName(context).trim()
-        val doseValue = getDoseValue(context).trim()
-        if (name.isBlank()) return ""
-        if (doseValue.isBlank()) return name
-        return "$name $doseValue${getDoseUnit(context)}${getDosePeriod(context)}"
+        return getMedicines(context).firstOrNull()?.displayText().orEmpty()
     }
 
     fun getMedicineShortText(context: Context): String {
-        val name = getMedicineName(context).trim()
-        return name.ifBlank { getMedicineDisplayText(context) }
+        return getCurrentDueMedicines(context).firstOrNull()?.medicine?.name
+            ?: getMedicines(context).firstOrNull()?.name.orEmpty()
+    }
+
+    fun getWidgetMedicineLines(context: Context): List<String> {
+        val due = getCurrentDueMedicines(context)
+        return if (due.isNotEmpty()) {
+            due.take(MAX_MEDICINES).map { it.medicine.displayText().ifBlank { "药品" } }
+        } else {
+            emptyList()
+        }
     }
 
     fun getDoseCount(context: Context): Int {
-        return prefs(context).getInt(KEY_DOSE_COUNT, 1).coerceIn(1, 3)
+        return getMedicines(context).firstOrNull()?.doseCount ?: 1
     }
 
     fun setDoseCount(context: Context, count: Int) {
-        prefs(context).edit().putInt(KEY_DOSE_COUNT, count.coerceIn(1, 3)).apply()
+        val first = getMedicines(context).firstOrNull() ?: defaultMedicine(context)
+        saveMedicine(
+            context,
+            first.copy(
+                doseCount = count.coerceIn(1, 3),
+                doseTimes = normalizeDoseTimes(first.doseTimes, count.coerceIn(1, 3))
+            )
+        )
     }
 
     fun getDoseTimes(context: Context): List<DoseTime> {
-        val count = getDoseCount(context)
-        return (1..count).map { doseIndex ->
-            DoseTime(
-                doseIndex = doseIndex,
-                time = getDoseTime(context, doseIndex, count)
-            )
+        val first = getMedicines(context).firstOrNull() ?: defaultMedicine(context)
+        return first.doseTimesForCount().mapIndexed { index, time ->
+            DoseTime(index + 1, time)
+        }
+    }
+
+    fun getDoseTimes(medicine: MedicineItem): List<DoseTime> {
+        return medicine.doseTimesForCount().mapIndexed { index, time ->
+            DoseTime(index + 1, time)
         }
     }
 
@@ -123,10 +214,15 @@ object MedicineRepository {
 
     fun setDoseTime(context: Context, doseIndex: Int, time: String) {
         if (doseIndex !in 1..3 || !isValidTime(time)) return
-        prefs(context).edit().putString(doseTimeKey(doseIndex), time).apply()
+        val first = getMedicines(context).firstOrNull() ?: defaultMedicine(context)
+        val times = normalizeDoseTimes(first.doseTimes, first.doseCount).toMutableList()
+        while (times.size < 3) times.add(defaultDoseTime(3, times.size + 1))
+        times[doseIndex - 1] = time
+        saveMedicine(context, first.copy(doseTimes = times))
     }
 
     fun autoMarkMissedDoses(context: Context): Boolean {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
 
         val now = Calendar.getInstance()
@@ -153,6 +249,33 @@ object MedicineRepository {
         return changed
     }
 
+    fun getCurrentDueMedicines(context: Context): List<MedicineTask> {
+        migrateMedicineItems(context)
+        migrateLegacyHistory(context)
+        val now = Calendar.getInstance()
+        val today = dateFormat.format(now.time)
+        return getEnabledMedicines(context).mapNotNull { medicine ->
+            val target = getTargetForMedicine(context, medicine, now, today)
+            target.takeIf { it.isDue && it.status == RecordStatus.NONE }
+        }.sortedWith(compareBy<MedicineTask> { it.minutesOfDay }.thenBy { it.medicine.id })
+    }
+
+    fun hasCurrentDueMedicines(context: Context): Boolean {
+        return getCurrentDueMedicines(context).isNotEmpty()
+    }
+
+    fun markCurrentDueMedicinesChecked(context: Context) {
+        getCurrentDueMedicines(context).forEach { task ->
+            markDoseChecked(context, task.dateKey, task.medicine.id, task.doseIndex)
+        }
+    }
+
+    fun markCurrentDueMedicinesMissed(context: Context) {
+        getCurrentDueMedicines(context).forEach { task ->
+            markDoseMissed(context, task.dateKey, task.medicine.id, task.doseIndex)
+        }
+    }
+
     fun getCurrentTarget(context: Context): DoseTarget {
         autoMarkMissedDoses(context)
         val now = Calendar.getInstance()
@@ -164,21 +287,48 @@ object MedicineRepository {
     }
 
     fun isCurrentDoseChecked(context: Context): Boolean {
-        return getCurrentTarget(context).checked
+        return getCurrentDueMedicines(context).isEmpty()
     }
 
     fun getTargetFor(context: Context, calendar: Calendar): DoseTarget {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
         val today = dateFormat.format(calendar.time)
-        val target = getTargetDoseTimeFor(context, calendar)
-        val status = getDoseRecordStatus(context, today, target.doseIndex)
-        return DoseTarget(
-            dateKey = today,
-            doseIndex = target.doseIndex,
-            time = target.time,
-            status = status,
-            checked = status == RecordStatus.DONE
-        )
+        val due = getEnabledMedicines(context).mapNotNull { medicine ->
+            val task = getTargetForMedicine(context, medicine, calendar, today)
+            task.takeIf { it.isDue && it.status == RecordStatus.NONE }
+        }.sortedWith(compareBy<MedicineTask> { it.minutesOfDay }.thenBy { it.medicine.id })
+
+        val task = due.firstOrNull()
+            ?: getEnabledMedicines(context).firstOrNull()?.let {
+                getTargetForMedicine(context, it, calendar, today)
+            }
+
+        return if (task == null) {
+            DoseTarget(today, DEFAULT_MEDICINE_ID, 1, "08:00", RecordStatus.DONE, checked = true)
+        } else if (due.isEmpty()) {
+            DoseTarget(
+                dateKey = task.dateKey,
+                medicineId = task.medicine.id,
+                doseIndex = task.doseIndex,
+                time = task.time,
+                status = RecordStatus.DONE,
+                checked = true,
+                medicineText = task.medicine.displayText(),
+                isDue = false
+            )
+        } else {
+            DoseTarget(
+                dateKey = task.dateKey,
+                medicineId = task.medicine.id,
+                doseIndex = task.doseIndex,
+                time = task.time,
+                status = task.status,
+                checked = false,
+                medicineText = task.medicine.displayText(),
+                isDue = true
+            )
+        }
     }
 
     fun isTodayChecked(context: Context): Boolean {
@@ -195,20 +345,33 @@ object MedicineRepository {
 
     fun markCurrentTargetChecked(context: Context) {
         val target = getCurrentTarget(context)
-        markDoseChecked(context, target.dateKey, target.doseIndex)
+        if (target.isDue) {
+            markDoseChecked(context, target.dateKey, target.medicineId, target.doseIndex)
+        }
     }
 
     fun clearCurrentTargetChecked(context: Context) {
         val target = getCurrentTarget(context)
-        clearDoseChecked(context, target.dateKey, target.doseIndex)
+        clearDoseRecord(context, target.dateKey, target.medicineId, target.doseIndex)
     }
 
     fun markDoseChecked(context: Context, dateKey: String, doseIndex: Int) {
+        val medicineId = getMedicines(context).firstOrNull()?.id ?: DEFAULT_MEDICINE_ID
+        markDoseChecked(context, dateKey, medicineId, doseIndex)
+    }
+
+    fun markDoseChecked(context: Context, dateKey: String, medicineId: String, doseIndex: Int) {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
         val history = getDoseHistory(context).toMutableSet()
         val missedHistory = getMissedHistory(context).toMutableSet()
-        history.add(doseRecordKey(dateKey, doseIndex))
-        missedHistory.remove(doseRecordKey(dateKey, doseIndex))
+        val key = doseRecordKey(dateKey, medicineId, doseIndex)
+        history.add(key)
+        missedHistory.remove(key)
+        if (medicineId == DEFAULT_MEDICINE_ID) {
+            history.add(legacyDoseRecordKey(dateKey, doseIndex))
+            missedHistory.remove(legacyDoseRecordKey(dateKey, doseIndex))
+        }
         prefs(context).edit()
             .putStringSet(KEY_DOSE_HISTORY, history)
             .putStringSet(KEY_MISSED_HISTORY, missedHistory)
@@ -220,11 +383,22 @@ object MedicineRepository {
     }
 
     fun markDoseMissed(context: Context, dateKey: String, doseIndex: Int) {
+        val medicineId = getMedicines(context).firstOrNull()?.id ?: DEFAULT_MEDICINE_ID
+        markDoseMissed(context, dateKey, medicineId, doseIndex)
+    }
+
+    fun markDoseMissed(context: Context, dateKey: String, medicineId: String, doseIndex: Int) {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
         val history = getDoseHistory(context).toMutableSet()
         val missedHistory = getMissedHistory(context).toMutableSet()
-        history.remove(doseRecordKey(dateKey, doseIndex))
-        missedHistory.add(doseRecordKey(dateKey, doseIndex))
+        val key = doseRecordKey(dateKey, medicineId, doseIndex)
+        history.remove(key)
+        missedHistory.add(key)
+        if (medicineId == DEFAULT_MEDICINE_ID) {
+            history.remove(legacyDoseRecordKey(dateKey, doseIndex))
+            missedHistory.add(legacyDoseRecordKey(dateKey, doseIndex))
+        }
         prefs(context).edit()
             .putStringSet(KEY_DOSE_HISTORY, history)
             .putStringSet(KEY_MISSED_HISTORY, missedHistory)
@@ -233,16 +407,28 @@ object MedicineRepository {
 
     fun markCurrentTargetMissed(context: Context) {
         val target = getCurrentTarget(context)
-        markDoseMissed(context, target.dateKey, target.doseIndex)
+        if (target.isDue) {
+            markDoseMissed(context, target.dateKey, target.medicineId, target.doseIndex)
+        }
     }
 
     fun clearDoseRecord(context: Context, dateKey: String, doseIndex: Int) {
+        val medicineId = getMedicines(context).firstOrNull()?.id ?: DEFAULT_MEDICINE_ID
+        clearDoseRecord(context, dateKey, medicineId, doseIndex)
+    }
+
+    fun clearDoseRecord(context: Context, dateKey: String, medicineId: String, doseIndex: Int) {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
         val history = getDoseHistory(context).toMutableSet()
         val missedHistory = getMissedHistory(context).toMutableSet()
-        val key = doseRecordKey(dateKey, doseIndex)
+        val key = doseRecordKey(dateKey, medicineId, doseIndex)
         history.remove(key)
         missedHistory.remove(key)
+        if (medicineId == DEFAULT_MEDICINE_ID) {
+            history.remove(legacyDoseRecordKey(dateKey, doseIndex))
+            missedHistory.remove(legacyDoseRecordKey(dateKey, doseIndex))
+        }
         prefs(context).edit()
             .putStringSet(KEY_DOSE_HISTORY, history)
             .putStringSet(KEY_MISSED_HISTORY, missedHistory)
@@ -250,51 +436,76 @@ object MedicineRepository {
     }
 
     fun isDoseChecked(context: Context, dateKey: String, doseIndex: Int): Boolean {
-        migrateLegacyHistory(context)
-        return getDoseHistory(context).contains(doseRecordKey(dateKey, doseIndex))
+        return getDoseRecordStatus(context, dateKey, doseIndex) == RecordStatus.DONE
     }
 
     fun isDoseMissed(context: Context, dateKey: String, doseIndex: Int): Boolean {
-        migrateLegacyHistory(context)
-        return getMissedHistory(context).contains(doseRecordKey(dateKey, doseIndex))
+        return getDoseRecordStatus(context, dateKey, doseIndex) == RecordStatus.MISSED
     }
 
     fun getDoseRecordStatus(context: Context, dateKey: String, doseIndex: Int): RecordStatus {
+        val medicineId = getMedicines(context).firstOrNull()?.id ?: DEFAULT_MEDICINE_ID
+        return getDoseRecordStatus(context, dateKey, medicineId, doseIndex)
+    }
+
+    fun getDoseRecordStatus(
+        context: Context,
+        dateKey: String,
+        medicineId: String,
+        doseIndex: Int
+    ): RecordStatus {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
-        val key = doseRecordKey(dateKey, doseIndex)
+        val key = doseRecordKey(dateKey, medicineId, doseIndex)
+        val legacyKey = legacyDoseRecordKey(dateKey, doseIndex)
+        val history = getDoseHistory(context)
+        val missedHistory = getMissedHistory(context)
         return when {
-            getDoseHistory(context).contains(key) -> RecordStatus.DONE
-            getMissedHistory(context).contains(key) -> RecordStatus.MISSED
+            history.contains(key) -> RecordStatus.DONE
+            medicineId == DEFAULT_MEDICINE_ID && history.contains(legacyKey) -> RecordStatus.DONE
+            missedHistory.contains(key) -> RecordStatus.MISSED
+            medicineId == DEFAULT_MEDICINE_ID && missedHistory.contains(legacyKey) -> RecordStatus.MISSED
             else -> RecordStatus.NONE
         }
     }
 
     fun isDoseExpired(context: Context, dateKey: String, doseIndex: Int): Boolean {
+        val medicine = getMedicines(context).firstOrNull() ?: defaultMedicine(context)
+        return isDoseExpired(context, dateKey, medicine, doseIndex)
+    }
+
+    fun isDoseExpired(
+        context: Context,
+        dateKey: String,
+        medicine: MedicineItem,
+        doseIndex: Int
+    ): Boolean {
         val today = todayKey()
         if (dateKey > today) return false
         if (dateKey < today) return true
 
         val now = Calendar.getInstance()
-        return getExpiredDoseIndexesForToday(context, now).contains(doseIndex)
+        return getExpiredDoseIndexesForToday(medicine, now).contains(doseIndex)
     }
 
     fun getDoseProgress(context: Context, dateKey: String): DoseProgress {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
-        val count = getDoseCount(context)
-        val history = getDoseHistory(context)
-        val missedHistory = getMissedHistory(context)
-        val completed = (1..count).count { doseIndex ->
-            history.contains(doseRecordKey(dateKey, doseIndex))
+        val medicines = getEnabledMedicines(context)
+        var total = 0
+        var completed = 0
+        var missed = 0
+        medicines.forEach { medicine ->
+            for (doseIndex in 1..medicine.doseCount) {
+                total++
+                when (getDoseRecordStatus(context, dateKey, medicine.id, doseIndex)) {
+                    RecordStatus.DONE -> completed++
+                    RecordStatus.MISSED -> missed++
+                    RecordStatus.NONE -> Unit
+                }
+            }
         }
-        val missed = (1..count).count { doseIndex ->
-            missedHistory.contains(doseRecordKey(dateKey, doseIndex))
-        }
-        return DoseProgress(
-            dateKey = dateKey,
-            completedDoses = completed,
-            totalDoses = count,
-            missedDoses = missed
-        )
+        return DoseProgress(dateKey, completed, total, missed)
     }
 
     fun getTodayProgress(context: Context): DoseProgress {
@@ -306,6 +517,7 @@ object MedicineRepository {
     }
 
     fun getRecentDays(context: Context, count: Int = 30): List<DayRecord> {
+        migrateMedicineItems(context)
         migrateLegacyHistory(context)
         val calendar = Calendar.getInstance()
         return (0 until count).map {
@@ -332,7 +544,8 @@ object MedicineRepository {
             completedDoses = progress.completedDoses,
             missedDoses = progress.missedDoses,
             pendingDoses = progress.pendingDoses,
-            currentTarget = target
+            currentTarget = target,
+            currentDueMedicines = getCurrentDueMedicines(context)
         )
     }
 
@@ -350,7 +563,7 @@ object MedicineRepository {
         val streakCalendar = today.clone() as Calendar
         while (true) {
             val progress = getDoseProgress(context, dateFormat.format(streakCalendar.time))
-            if (progress.isFullyComplete) {
+            if (progress.totalDoses > 0 && progress.isFullyComplete && !progress.hasMissed) {
                 consecutiveDays++
                 streakCalendar.add(Calendar.DAY_OF_YEAR, -1)
             } else {
@@ -364,8 +577,10 @@ object MedicineRepository {
         val monthCalendar = monthStart.clone() as Calendar
         while (!monthCalendar.after(today)) {
             val progress = getDoseProgress(context, dateFormat.format(monthCalendar.time))
-            monthTaskDays++
-            if (progress.isFullyComplete) monthCompleteDays++
+            if (progress.totalDoses > 0) {
+                monthTaskDays++
+                if (progress.isFullyComplete && !progress.hasMissed) monthCompleteDays++
+            }
             monthMissedDoses += progress.missedDoses
             monthCalendar.add(Calendar.DAY_OF_YEAR, 1)
         }
@@ -408,7 +623,7 @@ object MedicineRepository {
         }
         candidates.add(midnight.timeInMillis)
 
-        getDoseTimes(context).forEach { doseTime ->
+        getEnabledMedicines(context).flatMap { getDoseTimes(it) }.forEach { doseTime ->
             val doseCalendar = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, doseTime.hour)
                 set(Calendar.MINUTE, doseTime.minute)
@@ -424,12 +639,60 @@ object MedicineRepository {
         return candidates.minOrNull() ?: midnight.timeInMillis
     }
 
-    private fun getTargetDoseTimeFor(context: Context, calendar: Calendar): DoseTime {
-        val sortedTimes = getSortedDoseTimes(context)
-        if (sortedTimes.size == 1) return sortedTimes.first()
+    fun getReminderTimes(context: Context): List<DoseTime> {
+        return getEnabledMedicines(context)
+            .flatMap { medicine ->
+                getDoseTimes(medicine).map { doseTime -> doseTime.minutesOfDay to doseTime }
+            }
+            .distinctBy { it.first }
+            .map { it.second }
+            .sortedBy { it.minutesOfDay }
+    }
 
+    fun getCurrentReminderTasks(context: Context): List<MedicineTask> {
+        autoMarkMissedDoses(context)
+        return getCurrentDueMedicines(context)
+    }
+
+    fun getAllDoseRowsForDate(context: Context, dateKey: String): List<MedicineDoseRow> {
+        return getEnabledMedicines(context).flatMap { medicine ->
+            getDoseTimes(medicine).map { doseTime ->
+                MedicineDoseRow(
+                    dateKey = dateKey,
+                    medicine = medicine,
+                    doseIndex = doseTime.doseIndex,
+                    time = doseTime.time,
+                    status = getDoseRecordStatus(context, dateKey, medicine.id, doseTime.doseIndex)
+                )
+            }
+        }
+    }
+
+    private fun getTargetForMedicine(
+        context: Context,
+        medicine: MedicineItem,
+        calendar: Calendar,
+        dateKey: String
+    ): MedicineTask {
+        val sortedTimes = getDoseTimes(medicine).sortedWith(
+            compareBy<DoseTime> { it.minutesOfDay }.thenBy { it.doseIndex }
+        )
         val nowMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
-        return sortedTimes.lastOrNull { nowMinutes >= it.minutesOfDay } ?: sortedTimes.first()
+        val firstTime = sortedTimes.firstOrNull()
+        val target = sortedTimes.lastOrNull { nowMinutes >= it.minutesOfDay }
+            ?: firstTime
+            ?: DoseTime(1, "08:00")
+        val due = firstTime != null && nowMinutes >= firstTime.minutesOfDay
+        val status = getDoseRecordStatus(context, dateKey, medicine.id, target.doseIndex)
+        return MedicineTask(
+            dateKey = dateKey,
+            medicine = medicine,
+            doseIndex = target.doseIndex,
+            time = target.time,
+            status = status,
+            isDue = due,
+            minutesOfDay = target.minutesOfDay
+        )
     }
 
     private fun autoMarkPastDays(
@@ -452,12 +715,18 @@ object MedicineRepository {
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }
+        val medicines = getEnabledMedicines(context)
         while (!cursor.after(end)) {
             val dateKey = dateFormat.format(cursor.time)
-            getDoseTimes(context).forEach { doseTime ->
-                if (getDoseRecordStatus(context, dateKey, doseTime.doseIndex) == RecordStatus.NONE) {
-                    markDoseMissed(context, dateKey, doseTime.doseIndex)
-                    changed = true
+            medicines.forEach { medicine ->
+                getDoseTimes(medicine).forEach { doseTime ->
+                    if (
+                        getDoseRecordStatus(context, dateKey, medicine.id, doseTime.doseIndex) ==
+                        RecordStatus.NONE
+                    ) {
+                        markDoseMissed(context, dateKey, medicine.id, doseTime.doseIndex)
+                        changed = true
+                    }
                 }
             }
             cursor.add(Calendar.DAY_OF_YEAR, 1)
@@ -468,17 +737,21 @@ object MedicineRepository {
     private fun autoMarkTodayExpiredDoses(context: Context, now: Calendar): Boolean {
         var changed = false
         val today = dateFormat.format(now.time)
-        getExpiredDoseIndexesForToday(context, now).forEach { doseIndex ->
-            if (getDoseRecordStatus(context, today, doseIndex) == RecordStatus.NONE) {
-                markDoseMissed(context, today, doseIndex)
-                changed = true
+        getEnabledMedicines(context).forEach { medicine ->
+            getExpiredDoseIndexesForToday(medicine, now).forEach { doseIndex ->
+                if (getDoseRecordStatus(context, today, medicine.id, doseIndex) == RecordStatus.NONE) {
+                    markDoseMissed(context, today, medicine.id, doseIndex)
+                    changed = true
+                }
             }
         }
         return changed
     }
 
-    private fun getExpiredDoseIndexesForToday(context: Context, calendar: Calendar): Set<Int> {
-        val sortedTimes = getSortedDoseTimes(context)
+    private fun getExpiredDoseIndexesForToday(medicine: MedicineItem, calendar: Calendar): Set<Int> {
+        val sortedTimes = getDoseTimes(medicine).sortedWith(
+            compareBy<DoseTime> { it.minutesOfDay }.thenBy { it.doseIndex }
+        )
         if (sortedTimes.size <= 1) return emptySet()
 
         val nowMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
@@ -492,6 +765,59 @@ object MedicineRepository {
         return expired
     }
 
+    private fun migrateMedicineItems(context: Context) {
+        val sharedPreferences = prefs(context)
+        if (sharedPreferences.getBoolean(KEY_MEDICINES_MIGRATED, false)) {
+            if (getMedicineIds(context).isEmpty()) {
+                sharedPreferences.edit()
+                    .putString(KEY_MEDICINE_IDS, DEFAULT_MEDICINE_ID)
+                    .putString(medicineKey(DEFAULT_MEDICINE_ID, "name"), "")
+                    .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_value"), "")
+                    .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_unit"), DEFAULT_DOSE_UNIT)
+                    .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_period"), DEFAULT_DOSE_PERIOD)
+                    .putInt(medicineKey(DEFAULT_MEDICINE_ID, "dose_count"), 1)
+                    .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_time_1"), "08:00")
+                    .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_time_2"), "20:00")
+                    .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_time_3"), "20:00")
+                    .putBoolean(medicineKey(DEFAULT_MEDICINE_ID, "enabled"), true)
+                    .apply()
+            }
+            return
+        }
+
+        val migrated = MedicineItem(
+            id = DEFAULT_MEDICINE_ID,
+            name = sharedPreferences.getString(KEY_MEDICINE_NAME, "") ?: "",
+            doseValue = sharedPreferences.getString(KEY_DOSE_VALUE, "") ?: "",
+            doseUnit = sharedPreferences.getString(KEY_DOSE_UNIT, DEFAULT_DOSE_UNIT)
+                ?: DEFAULT_DOSE_UNIT,
+            dosePeriod = sharedPreferences.getString(KEY_DOSE_PERIOD, DEFAULT_DOSE_PERIOD)
+                ?: DEFAULT_DOSE_PERIOD,
+            doseCount = sharedPreferences.getInt(KEY_DOSE_COUNT, 1).coerceIn(1, 3),
+            doseTimes = (1..3).map { index ->
+                sharedPreferences.getString(doseTimeKey(index), null)
+                    ?: defaultDoseTime(sharedPreferences.getInt(KEY_DOSE_COUNT, 1), index)
+            },
+            enabled = true
+        ).normalized()
+
+        sharedPreferences.edit()
+            .putString(KEY_MEDICINE_IDS, DEFAULT_MEDICINE_ID)
+            .putString(medicineKey(DEFAULT_MEDICINE_ID, "name"), migrated.name)
+            .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_value"), migrated.doseValue)
+            .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_unit"), migrated.doseUnit)
+            .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_period"), migrated.dosePeriod)
+            .putInt(medicineKey(DEFAULT_MEDICINE_ID, "dose_count"), migrated.doseCount)
+            .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_time_1"), migrated.timeFor(1))
+            .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_time_2"), migrated.timeFor(2))
+            .putString(medicineKey(DEFAULT_MEDICINE_ID, "dose_time_3"), migrated.timeFor(3))
+            .putBoolean(medicineKey(DEFAULT_MEDICINE_ID, "enabled"), true)
+            .putBoolean(KEY_MEDICINES_MIGRATED, true)
+            .apply()
+
+        migrateLegacyHistory(context)
+    }
+
     private fun migrateLegacyHistory(context: Context) {
         val sharedPreferences = prefs(context)
         if (sharedPreferences.getBoolean(KEY_LEGACY_MIGRATED, false)) return
@@ -500,13 +826,15 @@ object MedicineRepository {
         val legacyHistory = sharedPreferences.getStringSet(KEY_HISTORY, emptySet()) ?: emptySet()
         legacyHistory.forEach { dateKey ->
             if (dateKey.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
-                doseHistory.add(doseRecordKey(dateKey, 1))
+                doseHistory.add(doseRecordKey(dateKey, DEFAULT_MEDICINE_ID, 1))
+                doseHistory.add(legacyDoseRecordKey(dateKey, 1))
             }
         }
 
         val checkedDate = sharedPreferences.getString(KEY_CHECKED_DATE, null)
         if (checkedDate != null && checkedDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) {
-            doseHistory.add(doseRecordKey(checkedDate, 1))
+            doseHistory.add(doseRecordKey(checkedDate, DEFAULT_MEDICINE_ID, 1))
+            doseHistory.add(legacyDoseRecordKey(checkedDate, 1))
         }
 
         sharedPreferences.edit()
@@ -515,15 +843,78 @@ object MedicineRepository {
             .apply()
     }
 
-    private fun getDoseTime(context: Context, doseIndex: Int, count: Int): String {
-        return prefs(context).getString(doseTimeKey(doseIndex), null)
-            ?: defaultDoseTime(count, doseIndex)
+    private fun getMedicineIds(context: Context): List<String> {
+        return (prefs(context).getString(KEY_MEDICINE_IDS, "") ?: "")
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .take(MAX_MEDICINES)
+    }
+
+    private fun loadMedicine(context: Context, id: String): MedicineItem {
+        val sharedPreferences = prefs(context)
+        val count = sharedPreferences.getInt(medicineKey(id, "dose_count"), 1).coerceIn(1, 3)
+        return MedicineItem(
+            id = id,
+            name = sharedPreferences.getString(medicineKey(id, "name"), "") ?: "",
+            doseValue = sharedPreferences.getString(medicineKey(id, "dose_value"), "") ?: "",
+            doseUnit = sharedPreferences.getString(medicineKey(id, "dose_unit"), DEFAULT_DOSE_UNIT)
+                ?: DEFAULT_DOSE_UNIT,
+            dosePeriod = sharedPreferences.getString(
+                medicineKey(id, "dose_period"),
+                DEFAULT_DOSE_PERIOD
+            ) ?: DEFAULT_DOSE_PERIOD,
+            doseCount = count,
+            doseTimes = (1..3).map { index ->
+                sharedPreferences.getString(medicineKey(id, "dose_time_$index"), null)
+                    ?: defaultDoseTime(count, index)
+            },
+            enabled = sharedPreferences.getBoolean(medicineKey(id, "enabled"), true)
+        ).normalized()
+    }
+
+    private fun defaultMedicine(context: Context): MedicineItem {
+        return MedicineItem(
+            id = DEFAULT_MEDICINE_ID,
+            name = prefs(context).getString(KEY_MEDICINE_NAME, "") ?: "",
+            doseValue = prefs(context).getString(KEY_DOSE_VALUE, "") ?: "",
+            doseUnit = DEFAULT_DOSE_UNIT,
+            dosePeriod = DEFAULT_DOSE_PERIOD,
+            doseCount = 1,
+            doseTimes = defaultDoseTimes(1),
+            enabled = true
+        )
+    }
+
+    private fun setLegacyMedicineMirror(context: Context, item: MedicineItem) {
+        val editor = prefs(context).edit()
+            .putString(KEY_MEDICINE_NAME, item.name)
+            .putString(KEY_DOSE_VALUE, item.doseValue)
+            .putString(KEY_DOSE_UNIT, item.doseUnit)
+            .putString(KEY_DOSE_PERIOD, item.dosePeriod)
+            .putInt(KEY_DOSE_COUNT, item.doseCount)
+        (1..3).forEach { index ->
+            editor.putString(doseTimeKey(index), item.timeFor(index))
+        }
+        editor.apply()
+    }
+
+    private fun defaultDoseTimes(count: Int): List<String> {
+        return (1..3).map { defaultDoseTime(count, it) }
+    }
+
+    private fun normalizeDoseTimes(times: List<String>, count: Int): List<String> {
+        return (1..3).map { index ->
+            times.getOrNull(index - 1)
+                ?.takeIf { isValidTime(it) }
+                ?: defaultDoseTime(count, index)
+        }
     }
 
     private fun defaultDoseTime(count: Int, doseIndex: Int): String {
         return when (count.coerceIn(1, 3)) {
-            1 -> listOf("08:00")
-            2 -> listOf("08:00", "20:00")
+            1 -> listOf("08:00", "20:00", "20:00")
+            2 -> listOf("08:00", "20:00", "20:00")
             else -> listOf("08:00", "14:00", "20:00")
         }.getOrElse(doseIndex - 1) { "08:00" }
     }
@@ -544,7 +935,15 @@ object MedicineRepository {
         }
     }
 
-    private fun doseRecordKey(dateKey: String, doseIndex: Int): String {
+    private fun medicineKey(medicineId: String, field: String): String {
+        return "medicine_${medicineId}_$field"
+    }
+
+    private fun doseRecordKey(dateKey: String, medicineId: String, doseIndex: Int): String {
+        return "$dateKey#$medicineId#$doseIndex"
+    }
+
+    private fun legacyDoseRecordKey(dateKey: String, doseIndex: Int): String {
         return "$dateKey#$doseIndex"
     }
 
@@ -587,18 +986,71 @@ object MedicineRepository {
         return if (period in DOSE_PERIODS) period else DEFAULT_DOSE_PERIOD
     }
 
-    val DOSE_UNITS = listOf("mg", "g", "ml", "片", "粒")
-    val DOSE_PERIODS = listOf("/天", "/次")
+    val DOSE_UNITS = listOf(
+        "mg", "g", "μg", "mcg",
+        "ml", "mL", "L", "滴",
+        "IU", "U", "万单位",
+        "片", "粒", "颗", "丸", "枚",
+        "袋", "包", "条",
+        "支", "瓶", "盒", "贴",
+        "喷", "揿", "吸",
+        "勺", "格", "块"
+    )
+    val DOSE_PERIODS = listOf("/天", "/次", "/周", "/月")
     val MISSED_REMINDER_DELAYS = listOf(0, 30, 60)
 
+    private const val DEFAULT_MEDICINE_ID = "med1"
     private const val DEFAULT_DOSE_UNIT = "mg"
     private const val DEFAULT_DOSE_PERIOD = "/天"
+    const val MAX_MEDICINES = 3
 }
 
 enum class RecordStatus {
     NONE,
     DONE,
     MISSED
+}
+
+data class MedicineItem(
+    val id: String,
+    val name: String,
+    val doseValue: String,
+    val doseUnit: String,
+    val dosePeriod: String,
+    val doseCount: Int,
+    val doseTimes: List<String>,
+    val enabled: Boolean
+) {
+    fun displayText(): String {
+        val cleanName = name.trim()
+        val cleanDose = doseValue.trim()
+        if (cleanName.isBlank()) return ""
+        if (cleanDose.isBlank()) return cleanName
+        return "$cleanName $cleanDose$doseUnit$dosePeriod"
+    }
+
+    fun doseTimesForCount(): List<String> = (1..doseCount.coerceIn(1, 3)).map { timeFor(it) }
+
+    fun timeFor(index: Int): String {
+        return doseTimes.getOrNull(index - 1)?.takeIf { it.matches(Regex("\\d{2}:\\d{2}")) }
+            ?: when (doseCount.coerceIn(1, 3)) {
+                1 -> listOf("08:00", "20:00", "20:00")
+                2 -> listOf("08:00", "20:00", "20:00")
+                else -> listOf("08:00", "14:00", "20:00")
+            }.getOrElse(index - 1) { "08:00" }
+    }
+
+    fun normalized(): MedicineItem {
+        val count = doseCount.coerceIn(1, 3)
+        val normalizedTimes = (1..3).map { timeFor(it) }
+        return copy(
+            id = id.ifBlank { "med1" },
+            name = name.trim(),
+            doseValue = doseValue.trim(),
+            doseCount = count,
+            doseTimes = normalizedTimes
+        )
+    }
 }
 
 data class DoseTime(
@@ -610,13 +1062,42 @@ data class DoseTime(
     val minutesOfDay: Int = hour * 60 + minute
 }
 
-data class DoseTarget(
+data class MedicineTask(
     val dateKey: String,
+    val medicine: MedicineItem,
     val doseIndex: Int,
     val time: String,
     val status: RecordStatus,
-    val checked: Boolean
+    val isDue: Boolean,
+    val minutesOfDay: Int
+)
+
+data class MedicineDoseRow(
+    val dateKey: String,
+    val medicine: MedicineItem,
+    val doseIndex: Int,
+    val time: String,
+    val status: RecordStatus
+)
+
+data class DoseTarget(
+    val dateKey: String,
+    val medicineId: String,
+    val doseIndex: Int,
+    val time: String,
+    val status: RecordStatus,
+    val checked: Boolean,
+    val medicineText: String = "",
+    val isDue: Boolean = false
 ) {
+    constructor(
+        dateKey: String,
+        doseIndex: Int,
+        time: String,
+        status: RecordStatus,
+        checked: Boolean
+    ) : this(dateKey, "med1", doseIndex, time, status, checked, "", false)
+
     val missed: Boolean = status == RecordStatus.MISSED
 }
 
@@ -628,7 +1109,7 @@ data class DoseProgress(
 ) {
     val isNoneComplete: Boolean = completedDoses == 0
     val isPartiallyComplete: Boolean = completedDoses in 1 until totalDoses
-    val isFullyComplete: Boolean = completedDoses >= totalDoses
+    val isFullyComplete: Boolean = totalDoses > 0 && completedDoses >= totalDoses
     val pendingDoses: Int = (totalDoses - completedDoses - missedDoses).coerceAtLeast(0)
     val hasMissed: Boolean = missedDoses > 0
 }
@@ -640,7 +1121,7 @@ data class DayRecord(
     val totalDoses: Int,
     val missedDoses: Int
 ) {
-    val checked: Boolean = completedDoses >= totalDoses
+    val checked: Boolean = totalDoses > 0 && completedDoses >= totalDoses && missedDoses == 0
     val partiallyChecked: Boolean = completedDoses in 1 until totalDoses
     val hasMissed: Boolean = missedDoses > 0
 }
@@ -650,7 +1131,8 @@ data class TodaySummary(
     val completedDoses: Int,
     val missedDoses: Int,
     val pendingDoses: Int,
-    val currentTarget: DoseTarget
+    val currentTarget: DoseTarget,
+    val currentDueMedicines: List<MedicineTask> = emptyList()
 )
 
 data class StatsSummary(

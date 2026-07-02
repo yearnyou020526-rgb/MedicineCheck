@@ -14,7 +14,7 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == MedicineWidgetProvider.ACTION_MARK_TODAY) {
-            MedicineRepository.markCurrentTargetChecked(context)
+            MedicineRepository.markCurrentDueMedicinesChecked(context)
             WidgetUpdateHelper.updateAllWidgets(context)
         }
     }
@@ -57,46 +57,55 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             manager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val target = MedicineRepository.getCurrentTarget(context)
+            val dueMedicines = MedicineRepository.getCurrentDueMedicines(context)
+            val hasDue = dueMedicines.isNotEmpty()
             val views = RemoteViews(context.packageName, R.layout.widget_medicine_card)
-            val medicineText = MedicineRepository.getMedicineDisplayText(context)
-                .ifBlank { context.getString(R.string.medicine_not_set) }
+            val medicineLines = MedicineRepository.getWidgetMedicineLines(context)
 
             views.setInt(
                 R.id.card_root,
                 "setBackgroundResource",
-                if (target.checked) R.drawable.widget_card_bg_checked
-                else R.drawable.widget_card_bg_unchecked
+                if (hasDue) R.drawable.widget_card_bg_unchecked
+                else R.drawable.widget_card_bg_checked
             )
-            views.setInt(R.id.card_pill, "setImageAlpha", if (target.checked) 86 else 255)
-            views.setViewVisibility(R.id.card_check, if (target.checked) View.VISIBLE else View.GONE)
-            views.setTextViewText(R.id.card_medicine_text, medicineText)
+            views.setInt(R.id.card_pill, "setImageAlpha", if (hasDue) 255 else 86)
+            views.setViewVisibility(R.id.card_check, if (hasDue) View.GONE else View.VISIBLE)
+            setMedicineLine(views, R.id.card_medicine_text, medicineLines.getOrNull(0), hasDue)
+            setMedicineLine(views, R.id.card_medicine_text_2, medicineLines.getOrNull(1), hasDue)
+            setMedicineLine(views, R.id.card_medicine_text_3, medicineLines.getOrNull(2), hasDue)
             views.setTextViewText(
                 R.id.card_status_text,
-                when (target.status) {
-                    RecordStatus.DONE -> context.getString(R.string.status_checked_short)
-                    RecordStatus.MISSED -> context.getString(R.string.status_missed_short)
-                    RecordStatus.NONE -> context.getString(R.string.widget_waiting_short)
-                }
+                if (hasDue) context.getString(R.string.widget_waiting_short)
+                else context.getString(R.string.status_checked_short)
             )
-            if (MedicineRepository.getDoseCount(context) == 1) {
-                views.setViewVisibility(R.id.card_dose_text, View.GONE)
-            } else {
-                views.setViewVisibility(R.id.card_dose_text, View.VISIBLE)
-                views.setTextViewText(R.id.card_dose_text, "第${target.doseIndex}次")
-            }
+            views.setViewVisibility(R.id.card_dose_text, View.GONE)
             views.setContentDescription(
                 R.id.card_root,
-                if (target.checked) context.getString(R.string.widget_checked)
-                else context.getString(R.string.widget_unchecked)
+                if (hasDue) context.getString(R.string.widget_unchecked)
+                else context.getString(R.string.widget_checked)
             )
             views.setOnClickPendingIntent(
                 R.id.card_root,
-                if (target.checked) undoConfirmIntent(context, appWidgetId)
-                else markCurrentTargetIntent(context, appWidgetId)
+                if (hasDue) markCurrentTargetIntent(context, appWidgetId)
+                else openAppIntent(context, appWidgetId)
             )
 
             manager.updateAppWidget(appWidgetId, views)
+        }
+
+        private fun setMedicineLine(
+            views: RemoteViews,
+            viewId: Int,
+            text: String?,
+            hasDue: Boolean
+        ) {
+            if (hasDue && !text.isNullOrBlank()) {
+                views.setViewVisibility(viewId, View.VISIBLE)
+                views.setTextViewText(viewId, text)
+            } else {
+                views.setViewVisibility(viewId, View.GONE)
+                views.setTextViewText(viewId, "")
+            }
         }
 
         private fun markCurrentTargetIntent(context: Context, appWidgetId: Int): PendingIntent {
@@ -122,6 +131,18 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             return PendingIntent.getActivity(
                 context,
                 30_000 + appWidgetId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        private fun openAppIntent(context: Context, appWidgetId: Int): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            return PendingIntent.getActivity(
+                context,
+                70_000 + appWidgetId,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )

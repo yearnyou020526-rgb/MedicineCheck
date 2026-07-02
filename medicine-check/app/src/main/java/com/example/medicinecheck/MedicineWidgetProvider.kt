@@ -13,7 +13,7 @@ class MedicineWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == ACTION_MARK_TODAY) {
-            MedicineRepository.markCurrentTargetChecked(context)
+            MedicineRepository.markCurrentDueMedicinesChecked(context)
             WidgetUpdateHelper.updateAllWidgets(context)
         }
     }
@@ -60,12 +60,12 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             manager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val target = MedicineRepository.getCurrentTarget(context)
+            val hasDue = MedicineRepository.hasCurrentDueMedicines(context)
             val views = RemoteViews(context.packageName, R.layout.widget_medicine)
 
             views.setImageViewResource(
                 R.id.widget_state_image,
-                if (target.checked) R.drawable.widget_checked_green else R.drawable.widget_unchecked_red
+                if (hasDue) R.drawable.widget_unchecked_red else R.drawable.widget_checked_green
             )
             views.setTextViewText(
                 R.id.widget_medicine_text,
@@ -73,12 +73,12 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             )
             views.setContentDescription(
                 R.id.widget_root,
-                if (target.checked) context.getString(R.string.widget_checked)
-                else context.getString(R.string.widget_unchecked)
+                if (hasDue) context.getString(R.string.widget_unchecked)
+                else context.getString(R.string.widget_checked)
             )
             views.setOnClickPendingIntent(
                 R.id.widget_root,
-                if (target.checked) undoConfirmIntent(context, appWidgetId) else markTodayIntent(context, appWidgetId)
+                openAppIntent(context, appWidgetId)
             )
 
             manager.updateAppWidget(appWidgetId, views)
@@ -107,6 +107,18 @@ class MedicineWidgetProvider : AppWidgetProvider() {
             return PendingIntent.getActivity(
                 context,
                 10_000 + appWidgetId,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        private fun openAppIntent(context: Context, appWidgetId: Int): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            return PendingIntent.getActivity(
+                context,
+                40_000 + appWidgetId,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )

@@ -8,7 +8,20 @@
     <string name="medicine_name">药名设置</string>
     <string name="medicine_name_hint">例如：降压药</string>
     <string name="dose_value_hint">剂量，例如：20</string>
+    <string name="dose_value_label">剂量</string>
+    <string name="dose_unit_label">单位</string>
+    <string name="dose_period_label">周期</string>
     <string name="medicine_not_set">未设置药名</string>
+    <string name="add_medicine">添加药物</string>
+    <string name="edit_medicine">编辑药物</string>
+    <string name="pause_medicine">暂停</string>
+    <string name="enable_medicine">启用</string>
+    <string name="delete_medicine">删除</string>
+    <string name="delete_medicine_message">删除后不会清空历史记录，但该药不会再参与提醒和统计。</string>
+    <string name="max_medicine_message">最多只能添加 3 种药</string>
+    <string name="medicine_paused">已暂停</string>
+    <string name="medicine_card_status">今日：已吃 %1$d/%2$d，漏吃 %3$d</string>
+    <string name="medicine_card_times">每天 %1$d 次：%2$s</string>
     <string name="save">保存药品信息</string>
     <string name="saved">已保存</string>
     <string name="today_checked">今天是否已吃药：已吃</string>
@@ -38,6 +51,8 @@
     <string name="today_overview_counts">已完成 %1$d 次　漏吃 %2$d 次　剩余 %3$d 次</string>
     <string name="current_target_format">当前：第 %1$d 次，%2$s，%3$s</string>
     <string name="current_target_done">今日已完成</string>
+    <string name="today_all_done">今日已完成</string>
+    <string name="current_due_count">当前待吃：%1$d 种药</string>
     <string name="recent_30_days">最近 30 天记录</string>
     <string name="calendar_title">服药日历</string>
     <string name="calendar_legend">绿色 = 全部完成　橙色 = 部分完成　红边 = 有漏吃　白色 = 未完成</string>
@@ -48,6 +63,7 @@
     <string name="stats_month_missed">本月漏吃：%1$d 次</string>
     <string name="record_detail_title">%1$s 记录</string>
     <string name="record_detail_item">第 %1$d 次　%2$s　%3$s</string>
+    <string name="record_detail_item_multi">%1$s　第 %2$d 次　%3$s　%4$s</string>
     <string name="record_action_done">补记已吃</string>
     <string name="record_action_missed">标记漏吃</string>
     <string name="record_action_clear">清除记录</string>
