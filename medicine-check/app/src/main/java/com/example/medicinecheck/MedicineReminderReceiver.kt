@@ -24,7 +24,7 @@ class MedicineReminderReceiver : BroadcastReceiver() {
         ) {
             MedicineReminderScheduler.showReminder(context, doseIndex, tasks)
         }
-        MedicineReminderScheduler.scheduleAllIfEnabled(context)
+        WidgetUpdateHelper.updateAllWidgets(context)
     }
 
     companion object {
@@ -47,7 +47,7 @@ class MedicineMissedReminderReceiver : BroadcastReceiver() {
         ) {
             MedicineReminderScheduler.showMissedReminder(context, doseIndex, tasks)
         }
-        MedicineReminderScheduler.scheduleAllIfEnabled(context)
+        WidgetUpdateHelper.updateAllWidgets(context)
     }
 }
 
