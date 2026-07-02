@@ -14,7 +14,7 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == MedicineWidgetProvider.ACTION_MARK_TODAY) {
-            MedicineRepository.markCurrentDueMedicinesChecked(context)
+            MedicineRepository.markCurrentTargetChecked(context)
             WidgetUpdateHelper.updateAllWidgets(context)
         }
     }
@@ -57,10 +57,13 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             manager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val dueMedicines = MedicineRepository.getCurrentDueMedicines(context)
-            val hasDue = dueMedicines.isNotEmpty()
+            val dueTasks = MedicineRepository.getCurrentDueMedicines(context)
+            val stageTasks = MedicineRepository.getCurrentStageTasks(context)
+            val hasDue = dueTasks.isNotEmpty()
             val views = RemoteViews(context.packageName, R.layout.widget_medicine_card)
-            val medicineLines = MedicineRepository.getWidgetMedicineLines(context)
+            val medicineLines = stageTasks
+                .map { it.medicine.displayText().ifBlank { context.getString(R.string.medicine_not_set) } }
+                .take(MedicineRepository.MAX_MEDICINES)
 
             views.setInt(
                 R.id.card_root,
@@ -70,16 +73,28 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             )
             views.setInt(R.id.card_pill, "setImageAlpha", if (hasDue) 255 else 86)
             views.setViewVisibility(R.id.card_check, if (hasDue) View.GONE else View.VISIBLE)
-            setMedicineLine(views, R.id.card_medicine_text, medicineLines.getOrNull(0))
-            setMedicineLine(views, R.id.card_medicine_text_2, medicineLines.getOrNull(1))
-            setMedicineLine(views, R.id.card_medicine_text_3, medicineLines.getOrNull(2))
+            if (hasDue) {
+                setMedicineLine(views, R.id.card_medicine_text, medicineLines.getOrNull(0))
+                setMedicineLine(views, R.id.card_medicine_text_2, medicineLines.getOrNull(1))
+                setMedicineLine(views, R.id.card_medicine_text_3, medicineLines.getOrNull(2))
+            } else {
+                setMedicineLine(views, R.id.card_medicine_text, null)
+                setMedicineLine(views, R.id.card_medicine_text_2, null)
+                setMedicineLine(views, R.id.card_medicine_text_3, null)
+            }
             views.setViewVisibility(R.id.card_status_text, View.GONE)
             views.setTextViewText(R.id.card_status_text, "")
-            views.setViewVisibility(R.id.card_dose_text, View.GONE)
+            val target = MedicineRepository.getCurrentTarget(context)
+            if (!hasDue || MedicineRepository.getDoseCount(context) == 1) {
+                views.setViewVisibility(R.id.card_dose_text, View.GONE)
+            } else {
+                views.setViewVisibility(R.id.card_dose_text, View.VISIBLE)
+                views.setTextViewText(R.id.card_dose_text, "第${target.doseIndex}次")
+            }
             views.setContentDescription(
                 R.id.card_root,
-                if (hasDue) context.getString(R.string.widget_unchecked)
-                else context.getString(R.string.widget_checked)
+                if (!hasDue) context.getString(R.string.widget_checked)
+                else context.getString(R.string.widget_unchecked)
             )
             views.setOnClickPendingIntent(
                 R.id.card_root,
@@ -90,17 +105,13 @@ class MedicineCardWidgetProvider : AppWidgetProvider() {
             manager.updateAppWidget(appWidgetId, views)
         }
 
-        private fun setMedicineLine(
-            views: RemoteViews,
-            viewId: Int,
-            text: String?
-        ) {
-            if (!text.isNullOrBlank()) {
-                views.setViewVisibility(viewId, View.VISIBLE)
-                views.setTextViewText(viewId, text)
-            } else {
+        private fun setMedicineLine(views: RemoteViews, viewId: Int, text: String?) {
+            if (text.isNullOrBlank()) {
                 views.setViewVisibility(viewId, View.GONE)
                 views.setTextViewText(viewId, "")
+            } else {
+                views.setViewVisibility(viewId, View.VISIBLE)
+                views.setTextViewText(viewId, text)
             }
         }
 

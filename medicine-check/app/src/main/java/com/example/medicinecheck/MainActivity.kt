@@ -13,11 +13,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.view.View
 import android.widget.AdapterView
 import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.NumberPicker
@@ -35,7 +35,6 @@ class MainActivity : Activity() {
     private lateinit var doseUnitSpinner: Spinner
     private lateinit var dosePeriodSpinner: Spinner
     private lateinit var medicineListContainer: LinearLayout
-    private lateinit var addMedicineButton: Button
     private lateinit var medicineDisplayText: TextView
     private lateinit var statusBadge: TextView
     private lateinit var progressText: TextView
@@ -59,6 +58,7 @@ class MainActivity : Activity() {
     private lateinit var permissionUnusedAppText: TextView
     private var updatingReminderSwitch = false
     private var updatingMissedReminderSpinner = false
+    private var editingMedicineId: String? = null
 
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
@@ -71,7 +71,6 @@ class MainActivity : Activity() {
         doseUnitSpinner = findViewById(R.id.dose_unit_spinner)
         dosePeriodSpinner = findViewById(R.id.dose_period_spinner)
         medicineListContainer = findViewById(R.id.medicine_list_container)
-        addMedicineButton = findViewById(R.id.add_medicine_button)
         medicineDisplayText = findViewById(R.id.medicine_display_text)
         statusBadge = findViewById(R.id.status_badge)
         progressText = findViewById(R.id.progress_text)
@@ -99,48 +98,72 @@ class MainActivity : Activity() {
         configureReminderSwitch()
         configureMissedReminderSpinner()
         configurePermissionButtons()
-        hideLegacySingleMedicineEditors()
         MedicineRepository.autoMarkMissedDoses(this)
 
-        addMedicineButton.setOnClickListener {
-            val item = MedicineRepository.addDefaultMedicine(this)
-            if (item == null) {
-                Toast.makeText(this, R.string.max_medicine_message, Toast.LENGTH_SHORT).show()
-            } else {
-                showMedicineEditor(item)
-            }
-        }
-
         findViewById<Button>(R.id.save_name_button).setOnClickListener {
-            MedicineRepository.setMedicineInfo(
-                context = this,
-                medicineName = medicineNameInput.text.toString(),
-                doseValue = doseValueInput.text.toString(),
-                doseUnit = doseUnitSpinner.selectedItem?.toString() ?: "mg",
-                dosePeriod = dosePeriodSpinner.selectedItem?.toString() ?: "/天"
-            )
+            val editingId = editingMedicineId
+            val saved = if (editingId == null) {
+                MedicineRepository.createMedicine(
+                    context = this,
+                    name = medicineNameInput.text.toString(),
+                    doseValue = doseValueInput.text.toString(),
+                    doseUnit = doseUnitSpinner.selectedItem?.toString() ?: "mg",
+                    dosePeriod = dosePeriodSpinner.selectedItem?.toString() ?: "/天"
+                ) != null
+            } else {
+                val current = MedicineRepository.getMedicines(this)
+                    .firstOrNull { it.id == editingId }
+                current != null && MedicineRepository.saveMedicine(
+                    this,
+                    current.copy(
+                        name = medicineNameInput.text.toString(),
+                        doseValue = doseValueInput.text.toString(),
+                        doseUnit = doseUnitSpinner.selectedItem?.toString() ?: "mg",
+                        dosePeriod = dosePeriodSpinner.selectedItem?.toString() ?: "/天"
+                    )
+                )
+            }
+            if (!saved) {
+                Toast.makeText(this, R.string.max_medicine_message, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            clearMedicineForm()
             syncAndRefresh()
             refreshReminderSchedule()
             Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
         }
 
         toggleButton.setOnClickListener {
-            if (MedicineRepository.getCurrentDueMedicines(this).isEmpty()) {
-                Toast.makeText(this, R.string.today_all_done, Toast.LENGTH_SHORT).show()
-            } else {
-                MedicineRepository.markCurrentDueMedicinesChecked(this)
-                syncAndRefresh()
-                refreshReminderSchedule()
+            val target = MedicineRepository.getCurrentTarget(this)
+            when (target.status) {
+                RecordStatus.DONE -> showCancelCurrentTargetDialog(target)
+                RecordStatus.MISSED -> confirmChangeFromMissed {
+                    MedicineRepository.markCurrentTargetChecked(this)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
+                RecordStatus.NONE -> {
+                    MedicineRepository.markCurrentTargetChecked(this)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
             }
         }
 
         markMissedButton.setOnClickListener {
-            if (MedicineRepository.getCurrentDueMedicines(this).isEmpty()) {
-                Toast.makeText(this, R.string.today_all_done, Toast.LENGTH_SHORT).show()
-            } else {
-                MedicineRepository.markCurrentDueMedicinesMissed(this)
-                syncAndRefresh()
-                refreshReminderSchedule()
+            val target = MedicineRepository.getCurrentTarget(this)
+            when (target.status) {
+                RecordStatus.DONE -> showCancelCurrentTargetDialog(target)
+                RecordStatus.MISSED -> confirmChangeFromMissed {
+                    MedicineRepository.clearDoseRecord(this, target.dateKey, target.doseIndex)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
+                RecordStatus.NONE -> {
+                    MedicineRepository.markCurrentTargetMissed(this)
+                    syncAndRefresh()
+                    refreshReminderSchedule()
+                }
             }
         }
 
@@ -255,33 +278,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun hideLegacySingleMedicineEditors() {
-        medicineNameInput.visibility = View.GONE
-        doseValueInput.visibility = View.GONE
-        doseUnitSpinner.visibility = View.GONE
-        dosePeriodSpinner.visibility = View.GONE
-        findViewById<View>(R.id.legacy_dose_row).visibility = View.GONE
-        findViewById<View>(R.id.save_name_button).visibility = View.GONE
-        findViewById<View>(R.id.dose_count_card).visibility = View.GONE
-        findViewById<View>(R.id.dose_times_card).visibility = View.GONE
-    }
-
     private fun refreshUi() {
-        val medicineName = MedicineRepository.getMedicineName(this)
-        if (medicineNameInput.text.toString() != medicineName) {
-            medicineNameInput.setText(medicineName)
-        }
-        val doseValue = MedicineRepository.getDoseValue(this)
-        if (doseValueInput.text.toString() != doseValue) {
-            doseValueInput.setText(doseValue)
-        }
-        setSpinnerSelection(doseUnitSpinner, MedicineRepository.getDoseUnit(this))
-        setSpinnerSelection(dosePeriodSpinner, MedicineRepository.getDosePeriod(this))
-
-        val medicineDisplay = MedicineRepository.getMedicineDisplayText(this)
-        medicineDisplayText.text = medicineDisplay.ifBlank {
-            getString(R.string.medicine_not_set)
-        }
+        renderMedicineCards()
 
         val doseCount = MedicineRepository.getDoseCount(this)
         if (doseCountPicker.value != doseCount) {
@@ -300,16 +298,13 @@ class MainActivity : Activity() {
         )
         updatingMissedReminderSpinner = false
 
-        renderMedicineCards()
-
         val summary = MedicineRepository.getTodaySummary(this)
         val target = summary.currentTarget
         val dueMedicines = summary.currentDueMedicines
         val progress = MedicineRepository.getTodayProgress(this)
-        val displayStatus = if (dueMedicines.isEmpty()) RecordStatus.DONE else RecordStatus.NONE
-        updateStatusBadge(displayStatus)
-        updateToggleButton(displayStatus)
-        updateMissedButton(displayStatus)
+        updateStatusBadge(target.status)
+        updateToggleButton(target.status)
+        updateMissedButton(target.status)
         progressText.text = getString(
             R.string.today_progress_format,
             progress.completedDoses,
@@ -324,13 +319,16 @@ class MainActivity : Activity() {
         medicineDisplayText.text = if (dueMedicines.isEmpty()) {
             getString(R.string.today_all_done)
         } else {
-            dueMedicines.joinToString("\n") { it.medicine.displayText().ifBlank { "药品" } }
+            dueMedicines.joinToString("\n") {
+                it.medicine.displayText().ifBlank { getString(R.string.medicine_not_set) }
+            }
         }
-        currentTargetText.text = if (dueMedicines.isEmpty()) {
-            getString(R.string.today_all_done)
-        } else {
-            getString(R.string.current_due_count, dueMedicines.size)
-        }
+        currentTargetText.text = getString(
+            R.string.current_target_format,
+            target.doseIndex,
+            target.time,
+            statusLabel(target.status)
+        )
 
         renderDoseTimes()
         renderCalendar()
@@ -355,13 +353,17 @@ class MainActivity : Activity() {
         MedicineRepository.getDoseTimes(this).forEachIndexed { index, doseTime ->
             if (index > 0) addSpacer(doseTimesContainer, 10)
 
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+            val block = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
+            }
+
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
             }
 
             row.addView(TextView(this).apply {
@@ -384,7 +386,54 @@ class MainActivity : Activity() {
                 }
             })
 
-            doseTimesContainer.addView(row)
+            block.addView(row)
+            block.addView(TextView(this).apply {
+                text = getString(R.string.slot_medicines_title)
+                setTextColor(COLOR_TEXT_SECONDARY)
+                textSize = 13f
+                setPadding(0, dp(8), 0, dp(2))
+            })
+
+            val medicines = MedicineRepository.getMedicines(this)
+            val selectedIds = MedicineRepository.getSlotMedicineIds(this, doseTime.doseIndex).toSet()
+            if (medicines.isEmpty()) {
+                block.addView(TextView(this).apply {
+                    text = getString(R.string.no_medicine_saved)
+                    setTextColor(COLOR_TEXT_MUTED)
+                    textSize = 13f
+                    setPadding(0, dp(4), 0, 0)
+                })
+            } else {
+                medicines.forEach { medicine ->
+                    block.addView(CheckBox(this).apply {
+                        text = medicine.displayText().ifBlank { getString(R.string.medicine_not_set) }
+                        textSize = 14f
+                        setTextColor(if (medicine.enabled) COLOR_TEXT_PRIMARY else COLOR_TEXT_MUTED)
+                        isChecked = selectedIds.contains(medicine.id)
+                        isEnabled = medicine.enabled
+                        setOnCheckedChangeListener { _, checked ->
+                            val current = MedicineRepository.getSlotMedicineIds(
+                                this@MainActivity,
+                                doseTime.doseIndex
+                            ).toMutableList()
+                            if (checked && !current.contains(medicine.id)) {
+                                current.add(medicine.id)
+                            } else if (!checked) {
+                                current.remove(medicine.id)
+                            }
+                            MedicineRepository.setSlotMedicineIds(
+                                this@MainActivity,
+                                doseTime.doseIndex,
+                                current
+                            )
+                            syncAndRefresh()
+                            refreshReminderSchedule()
+                        }
+                    })
+                }
+            }
+
+            doseTimesContainer.addView(block)
         }
     }
 
@@ -408,12 +457,7 @@ class MainActivity : Activity() {
             .setTitle(R.string.undo_title)
             .setMessage(R.string.undo_message)
             .setPositiveButton(R.string.undo_confirm) { _, _ ->
-                MedicineRepository.clearDoseRecord(
-                    this,
-                    target.dateKey,
-                    target.medicineId,
-                    target.doseIndex
-                )
+                MedicineRepository.clearDoseRecord(this, target.dateKey, target.doseIndex)
                 syncAndRefresh()
                 refreshReminderSchedule()
             }
@@ -437,92 +481,47 @@ class MainActivity : Activity() {
 
     private fun renderMedicineCards() {
         medicineListContainer.removeAllViews()
-        MedicineRepository.getMedicines(this).forEachIndexed { index, medicine ->
-            if (index > 0) addSpacer(medicineListContainer, 10)
+        val medicines = MedicineRepository.getMedicines(this)
+        medicines.forEachIndexed { index, medicine ->
+            if (index > 0) addSpacer(medicineListContainer, 8)
             medicineListContainer.addView(createMedicineCard(medicine))
         }
     }
 
     private fun createMedicineCard(medicine: MedicineItem): LinearLayout {
-        val todayKey = MedicineRepository.getTodayDateKey()
-        val progressRows = MedicineRepository.getDoseTimes(medicine).map { doseTime ->
-            MedicineRepository.getDoseRecordStatus(
-                this,
-                todayKey,
-                medicine.id,
-                doseTime.doseIndex
-            )
-        }
-        val doneCount = progressRows.count { it == RecordStatus.DONE }
-        val missedCount = progressRows.count { it == RecordStatus.MISSED }
-        val statusText = if (!medicine.enabled) {
-            getString(R.string.medicine_paused)
-        } else {
-            getString(R.string.medicine_card_status, doneCount, medicine.doseCount, missedCount)
-        }
-        val currentTask = MedicineRepository.getCurrentStageTasks(this)
-            .firstOrNull { it.medicine.id == medicine.id }
-
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = roundedDrawable(
                 if (medicine.enabled) Color.WHITE else COLOR_FUTURE_CELL,
-                16f,
+                14f,
                 COLOR_BORDER,
                 1
             )
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
 
             addView(TextView(this@MainActivity).apply {
                 text = medicine.displayText().ifBlank { getString(R.string.medicine_not_set) }
-                setTextColor(COLOR_TEXT_PRIMARY)
-                textSize = 16f
+                setTextColor(if (medicine.enabled) COLOR_TEXT_PRIMARY else COLOR_TEXT_MUTED)
+                textSize = 15f
                 typeface = Typeface.DEFAULT_BOLD
             })
-            addView(TextView(this@MainActivity).apply {
-                text = getString(
-                    R.string.medicine_card_times,
-                    medicine.doseCount,
-                    MedicineRepository.getDoseTimes(medicine).joinToString("、") { it.time }
-                )
-                setTextColor(COLOR_TEXT_SECONDARY)
-                textSize = 13f
-                setPadding(0, dp(6), 0, 0)
-            })
-            addView(createMedicineTimeButtons(medicine))
-            addView(TextView(this@MainActivity).apply {
-                text = statusText
-                setTextColor(if (medicine.enabled) COLOR_TEXT_SECONDARY else COLOR_RED)
-                textSize = 13f
-                setPadding(0, dp(4), 0, 0)
-            })
-            if (currentTask != null) {
-                addView(TextView(this@MainActivity).apply {
-                    text = getString(
-                        R.string.current_medicine_status,
-                        currentTask.doseIndex,
-                        currentTask.time,
-                        statusLabel(currentTask.status)
-                    )
-                    setTextColor(COLOR_TEXT_SECONDARY)
-                    textSize = 13f
-                    setPadding(0, dp(4), 0, 0)
-                })
-            }
 
             val actions = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(0, dp(10), 0, 0)
+                setPadding(0, dp(8), 0, 0)
             }
             actions.addView(cardActionButton(getString(R.string.edit_medicine)) {
-                showMedicineEditor(medicine)
+                startEditMedicine(medicine)
             })
             actions.addView(cardActionButton(
                 if (medicine.enabled) getString(R.string.pause_medicine)
                 else getString(R.string.enable_medicine)
             ) {
-                MedicineRepository.saveMedicine(this@MainActivity, medicine.copy(enabled = !medicine.enabled))
+                MedicineRepository.saveMedicine(
+                    this@MainActivity,
+                    medicine.copy(enabled = !medicine.enabled)
+                )
                 syncAndRefresh()
                 refreshReminderSchedule()
             })
@@ -530,67 +529,7 @@ class MainActivity : Activity() {
                 confirmDeleteMedicine(medicine)
             })
             addView(actions)
-
-            val doneTask = currentTask?.takeIf { it.status == RecordStatus.DONE }
-            if (doneTask != null) {
-                addView(Button(this@MainActivity).apply {
-                    text = getString(R.string.undo_current_dose)
-                    textSize = 14f
-                    setTextColor(COLOR_RED)
-                    setAllCaps(false)
-                    minHeight = 0
-                    background = roundedDrawable(COLOR_CANCEL_BUTTON, 14f)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(42)
-                    ).apply { setMargins(0, dp(10), 0, 0) }
-                    setOnClickListener { showCancelDoseDialog(doneTask) }
-                })
-            }
         }
-    }
-
-    private fun createMedicineTimeButtons(medicine: MedicineItem): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(8), 0, dp(2))
-            MedicineRepository.getDoseTimes(medicine).forEach { doseTime ->
-                addView(Button(this@MainActivity).apply {
-                    text = getString(R.string.medicine_time_button, doseTime.doseIndex, doseTime.time)
-                    textSize = 14f
-                    setTextColor(COLOR_GREEN)
-                    setAllCaps(false)
-                    minHeight = 0
-                    background = roundedDrawable(COLOR_SOFT_GREEN, 12f)
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        dp(38)
-                    ).apply { setMargins(0, dp(4), 0, 0) }
-                    setOnClickListener {
-                        showMedicineTimePicker(medicine, doseTime)
-                    }
-                })
-            }
-        }
-    }
-
-    private fun showMedicineTimePicker(medicine: MedicineItem, doseTime: DoseTime) {
-        TimePickerDialog(
-            this,
-            { _, hourOfDay, minute ->
-                val newTime = String.format(Locale.US, "%02d:%02d", hourOfDay, minute)
-                val times = medicine.doseTimes.toMutableList().apply {
-                    val defaults = defaultEditorTimes(medicine.doseCount)
-                    while (size < 3) add(defaults[size])
-                }
-                times[doseTime.doseIndex - 1] = newTime
-                MedicineRepository.saveMedicine(this, medicine.copy(doseTimes = times))
-                syncAndRefresh()
-            },
-            doseTime.hour,
-            doseTime.minute,
-            true
-        ).show()
     }
 
     private fun cardActionButton(
@@ -605,159 +544,29 @@ class MainActivity : Activity() {
             setAllCaps(false)
             minHeight = 0
             background = roundedDrawable(COLOR_SOFT_GREEN, 12f)
-            layoutParams = LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
                 setMargins(dp(3), 0, dp(3), 0)
             }
             setOnClickListener { action() }
         }
     }
 
-    private fun showMedicineEditor(medicine: MedicineItem) {
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(4), dp(4), 0)
-        }
-        val nameInput = dialogEditText(medicine.name, getString(R.string.medicine_name_hint))
-        val doseInput = dialogEditText(medicine.doseValue, getString(R.string.dose_value_hint))
-        val unitSpinner = dialogSpinner(MedicineRepository.DOSE_UNITS, medicine.doseUnit)
-        val periodSpinner = dialogSpinner(MedicineRepository.DOSE_PERIODS, medicine.dosePeriod)
-        val enabledSwitch = Switch(this).apply {
-            text = getString(R.string.enable_medicine)
-            isChecked = medicine.enabled
-            textSize = 15f
-            setTextColor(COLOR_TEXT_PRIMARY)
-        }
-        val doseCountPicker = NumberPicker(this).apply {
-            minValue = 1
-            maxValue = 3
-            displayedValues = arrayOf("1次", "2次", "3次")
-            wrapSelectorWheel = false
-            value = medicine.doseCount
-        }
-        val times = medicine.doseTimes.toMutableList().apply {
-            val defaults = defaultEditorTimes(medicine.doseCount)
-            while (size < 3) add(defaults[size])
-        }
-        val timeContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        fun renderEditorTimes() {
-            timeContainer.removeAllViews()
-            for (doseIndex in 1..doseCountPicker.value) {
-                val time = times[doseIndex - 1]
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, dp(6), 0, 0)
-                }
-                row.addView(TextView(this).apply {
-                    text = getString(R.string.dose_time_label, doseIndex)
-                    setTextColor(COLOR_TEXT_PRIMARY)
-                    textSize = 14f
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                })
-                row.addView(Button(this).apply {
-                    text = time
-                    setTextColor(COLOR_GREEN)
-                    setAllCaps(false)
-                    background = roundedDrawable(COLOR_SOFT_GREEN, 12f)
-                    layoutParams = LinearLayout.LayoutParams(dp(104), dp(40))
-                    setOnClickListener {
-                        val doseTime = DoseTime(doseIndex, times[doseIndex - 1])
-                        TimePickerDialog(
-                            this@MainActivity,
-                            { _, hourOfDay, minute ->
-                                times[doseIndex - 1] = String.format(
-                                    Locale.US,
-                                    "%02d:%02d",
-                                    hourOfDay,
-                                    minute
-                                )
-                                renderEditorTimes()
-                            },
-                            doseTime.hour,
-                            doseTime.minute,
-                            true
-                        ).show()
-                    }
-                })
-                timeContainer.addView(row)
-            }
-        }
-
-        doseCountPicker.setOnValueChangedListener { _, oldValue, newValue ->
-            val defaults = defaultEditorTimes(newValue)
-            for (index in 0..2) {
-                if (index >= oldValue || times[index].isBlank()) {
-                    times[index] = defaults[index]
-                }
-            }
-            renderEditorTimes()
-        }
-
-        content.addView(labelText(getString(R.string.medicine_name)))
-        content.addView(nameInput)
-        content.addView(labelText(getString(R.string.dose_value_label)))
-        content.addView(doseInput)
-        content.addView(labelText(getString(R.string.dose_unit_label)))
-        content.addView(unitSpinner)
-        content.addView(labelText(getString(R.string.dose_period_label)))
-        content.addView(periodSpinner)
-        content.addView(labelText(getString(R.string.dose_count_title)))
-        content.addView(doseCountPicker)
-        content.addView(enabledSwitch)
-        content.addView(labelText(getString(R.string.dose_times_title)))
-        content.addView(timeContainer)
-        renderEditorTimes()
-
-        AlertDialog.Builder(this)
-            .setTitle(R.string.edit_medicine)
-            .setView(content)
-            .setPositiveButton(R.string.save) { _, _ ->
-                MedicineRepository.saveMedicine(
-                    this,
-                    medicine.copy(
-                        name = nameInput.text.toString(),
-                        doseValue = doseInput.text.toString(),
-                        doseUnit = unitSpinner.selectedItem?.toString() ?: "mg",
-                        dosePeriod = periodSpinner.selectedItem?.toString() ?: "/天",
-                        doseCount = doseCountPicker.value,
-                        doseTimes = times,
-                        enabled = enabledSwitch.isChecked
-                    )
-                )
-                syncAndRefresh()
-                refreshReminderSchedule()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+    private fun startEditMedicine(medicine: MedicineItem) {
+        editingMedicineId = medicine.id
+        medicineNameInput.setText(medicine.name)
+        doseValueInput.setText(medicine.doseValue)
+        setSpinnerSelection(doseUnitSpinner, medicine.doseUnit)
+        setSpinnerSelection(dosePeriodSpinner, medicine.dosePeriod)
+        findViewById<Button>(R.id.save_name_button).text = getString(R.string.save)
     }
 
-    private fun defaultEditorTimes(count: Int): List<String> {
-        return when (count.coerceIn(1, 3)) {
-            1 -> listOf("08:00", "20:00", "20:00")
-            2 -> listOf("08:00", "20:00", "20:00")
-            else -> listOf("08:00", "14:00", "20:00")
-        }
-    }
-
-    private fun showCancelDoseDialog(task: MedicineTask) {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.undo_dose_title)
-            .setMessage(R.string.undo_dose_message)
-            .setPositiveButton(R.string.undo_dose_confirm) { _, _ ->
-                MedicineRepository.clearDoseRecord(
-                    this,
-                    task.dateKey,
-                    task.medicine.id,
-                    task.doseIndex
-                )
-                syncAndRefresh()
-                refreshReminderSchedule()
-            }
-            .setNegativeButton(R.string.undo_dose_keep, null)
-            .show()
+    private fun clearMedicineForm() {
+        editingMedicineId = null
+        medicineNameInput.setText("")
+        doseValueInput.setText("")
+        setSpinnerSelection(doseUnitSpinner, "mg")
+        setSpinnerSelection(dosePeriodSpinner, "/天")
+        findViewById<Button>(R.id.save_name_button).text = getString(R.string.save)
     }
 
     private fun confirmDeleteMedicine(medicine: MedicineItem) {
@@ -766,51 +575,12 @@ class MainActivity : Activity() {
             .setMessage(R.string.delete_medicine_message)
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 MedicineRepository.deleteMedicine(this, medicine.id)
+                if (editingMedicineId == medicine.id) clearMedicineForm()
                 syncAndRefresh()
                 refreshReminderSchedule()
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
-    }
-
-    private fun dialogEditText(value: String, hint: String): EditText {
-        return EditText(this).apply {
-            setText(value)
-            this.hint = hint
-            maxLines = 1
-            textSize = 15f
-            setPadding(dp(12), 0, dp(12), 0)
-            background = roundedDrawable(Color.WHITE, 12f, COLOR_BORDER, 1)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(44)
-            ).apply { setMargins(0, dp(6), 0, dp(8)) }
-        }
-    }
-
-    private fun dialogSpinner(values: List<String>, selected: String): Spinner {
-        return Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                values
-            )
-            setSpinnerSelection(this, selected)
-            background = roundedDrawable(Color.WHITE, 12f, COLOR_BORDER, 1)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(44)
-            ).apply { setMargins(0, dp(6), 0, dp(8)) }
-        }
-    }
-
-    private fun labelText(label: String): TextView {
-        return TextView(this).apply {
-            text = label
-            textSize = 14f
-            setTextColor(COLOR_TEXT_SECONDARY)
-            setPadding(0, dp(8), 0, 0)
-        }
     }
 
     private fun refreshReminderSchedule() {
@@ -897,29 +667,27 @@ class MainActivity : Activity() {
 
     private fun updateToggleButton(status: RecordStatus) {
         toggleButton.text = when (status) {
-            RecordStatus.DONE -> getString(R.string.today_all_done)
+            RecordStatus.DONE -> getString(R.string.cancel_today)
             RecordStatus.MISSED -> getString(R.string.mark_today)
             RecordStatus.NONE -> getString(R.string.mark_today)
         }
-        toggleButton.isEnabled = status != RecordStatus.DONE
-        toggleButton.setTextColor(if (status == RecordStatus.DONE) COLOR_TEXT_SECONDARY else Color.WHITE)
+        toggleButton.setTextColor(if (status == RecordStatus.DONE) COLOR_RED else Color.WHITE)
         toggleButton.background = roundedDrawable(
-            color = if (status == RecordStatus.DONE) COLOR_FUTURE_CELL else COLOR_GREEN,
+            color = if (status == RecordStatus.DONE) COLOR_CANCEL_BUTTON else COLOR_GREEN,
             radiusDp = 16f
         )
     }
 
     private fun updateMissedButton(status: RecordStatus) {
         markMissedButton.text = when (status) {
-            RecordStatus.DONE -> getString(R.string.today_all_done)
+            RecordStatus.DONE -> getString(R.string.cancel_today)
             RecordStatus.MISSED -> getString(R.string.clear_missed)
             RecordStatus.NONE -> getString(R.string.mark_missed)
         }
-        markMissedButton.isEnabled = status != RecordStatus.DONE
         markMissedButton.setTextColor(
             when (status) {
                 RecordStatus.MISSED -> COLOR_PARTIAL_TEXT
-                RecordStatus.DONE -> COLOR_TEXT_MUTED
+                RecordStatus.DONE -> COLOR_RED
                 RecordStatus.NONE -> COLOR_TEXT_SECONDARY
             }
         )
@@ -1119,6 +887,10 @@ class MainActivity : Activity() {
 
     private fun showDayRecordDialog(dateKey: String) {
         val rows = MedicineRepository.getAllDoseRowsForDate(this, dateKey)
+        if (rows.isEmpty()) {
+            Toast.makeText(this, R.string.no_slot_medicine_message, Toast.LENGTH_SHORT).show()
+            return
+        }
         val items = rows.map { row ->
             getString(
                 R.string.record_detail_item_multi,
@@ -1141,8 +913,8 @@ class MainActivity : Activity() {
         val status = MedicineRepository.getDoseRecordStatus(
             this,
             row.dateKey,
-            row.medicine.id,
-            row.doseIndex
+            row.doseIndex,
+            row.medicine.id
         )
         val actions = arrayOf(
             getString(R.string.record_action_done),
@@ -1158,20 +930,20 @@ class MainActivity : Activity() {
                         0 -> MedicineRepository.markDoseChecked(
                             this,
                             row.dateKey,
-                            row.medicine.id,
-                            row.doseIndex
+                            row.doseIndex,
+                            row.medicine.id
                         )
                         1 -> MedicineRepository.markDoseMissed(
                             this,
                             row.dateKey,
-                            row.medicine.id,
-                            row.doseIndex
+                            row.doseIndex,
+                            row.medicine.id
                         )
                         else -> MedicineRepository.clearDoseRecord(
                             this,
                             row.dateKey,
-                            row.medicine.id,
-                            row.doseIndex
+                            row.doseIndex,
+                            row.medicine.id
                         )
                     }
                     syncAndRefresh()
@@ -1182,7 +954,7 @@ class MainActivity : Activity() {
                 } else if (
                     which == 2 &&
                     status != RecordStatus.NONE &&
-                    MedicineRepository.isDoseExpired(this, row.dateKey, row.medicine, row.doseIndex)
+                    MedicineRepository.isDoseExpired(this, row.dateKey, row.doseIndex)
                 ) {
                     AlertDialog.Builder(this)
                         .setTitle(R.string.confirm_clear_expired_title)

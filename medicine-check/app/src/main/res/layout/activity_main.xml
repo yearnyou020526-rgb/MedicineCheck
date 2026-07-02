@@ -47,26 +47,6 @@
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
-            <LinearLayout
-                android:id="@+id/medicine_list_container"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="vertical" />
-
-            <Button
-                android:id="@+id/add_medicine_button"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/button_secondary"
-                android:minHeight="0dp"
-                android:text="@string/add_medicine"
-                android:textAllCaps="false"
-                android:textColor="@color/accent_green"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
             <EditText
                 android:id="@+id/medicine_name_input"
                 android:layout_width="match_parent"
@@ -98,7 +78,6 @@
                 android:textSize="15sp" />
 
             <LinearLayout
-                android:id="@+id/legacy_dose_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
@@ -139,6 +118,13 @@
                 android:textColor="@color/accent_green"
                 android:textSize="15sp"
                 android:textStyle="bold" />
+
+            <LinearLayout
+                android:id="@+id/medicine_list_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="vertical" />
         </LinearLayout>
 
         <LinearLayout
